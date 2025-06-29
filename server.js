@@ -6,10 +6,6 @@ import cors from 'cors';
 import { PrismaClient } from './generated/prisma/index.js';
 const prisma = new PrismaClient();
 
-import transactionsRoute from './routes/transactions.js';
-import userRoute from './routes/user.js';
-import tiingoRoute from './routes/tiingo/prices.js';
-
 dotenv.config();
 
 const app = express();
@@ -24,10 +20,14 @@ app.use((req, res, next) => {
   next();
 });
 
+import transactionsRoute from './routes/transactions.js';
+import userRoute from './routes/users.js';
+import searchRoute from './routes/tiingo/search.js';
+
 // 路由掛載
-app.use('/api/tiingo', tiingoRoute);
 app.use('/api/transactions', transactionsRoute);
 app.use('/api/user', userRoute);
+app.use('/api/search', searchRoute);
 
 app.listen(PORT, () => {
   console.log(`🚀 Tiingo Proxy Server running at http://localhost:${PORT}`);

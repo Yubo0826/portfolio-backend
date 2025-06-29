@@ -1,10 +1,10 @@
 import express from 'express';
 const router = express.Router();
+
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
-// POST /api/transactions
-router.post('/api/transactions', async (req, res) => {
+router.post('/', async (req, res) => {
   console.log('Received transaction data:', req.body);
   try {
     const {
@@ -41,4 +41,4 @@ router.post('/api/transactions', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
