@@ -23,6 +23,8 @@ router.post('/', async (req, res) => {
     const {
       uid,
       symbol,
+      name,
+      assetType,
       shares,
       price,
       transactionType,
@@ -39,6 +41,8 @@ router.post('/', async (req, res) => {
       data: {
         uid,
         symbol,
+        name,
+        asset_type: assetType,
         shares,
         price,
         transaction_type: transactionType,
