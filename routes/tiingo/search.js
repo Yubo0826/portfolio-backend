@@ -3,11 +3,13 @@ import fetch from 'node-fetch';
 
 const router = express.Router();
 
+const apiKey = process.env.TIINGO_API_KEY;
+
 // Search for symbol name
 router.get('/symbols', async (req, res) => {
     const query = req.query.query;
-    const url = `https://api.tiingo.com/tiingo/utilities/search?query=${query}&token=${process.env.TIINGO_API_KEY}`;
-
+    const url = `https://api.tiingo.com/tiingo/utilities/search?query=${query}&token=${apiKey}`;
+    console.log('Received /api/search/symbols request:', url);
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
@@ -24,15 +26,15 @@ router.get('/symbols', async (req, res) => {
 router.get('/price/:symbol', async (req, res) => {
   console.log('Received /api/search/price request:', req.params);
   const symbol = req.params.symbol;
-  const { date } = req.query;
-  const apiKey = process.env.TIINGO_API_KEY;
-
-  const url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?startDate=${date}&endDate=${date}&token=${apiKey}`;
+  const { startDate, endDate } = req.query;
+  const url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?startDate=${startDate}&endDate=${endDate}&token=${apiKey}`;
+  console.log('Tiingo price URL:', url);
 
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
     const data = await response.json();
+    console.log('Tiingo price response:', data);
     res.json(data);
   } catch (error) {
     console.error('Tiingo fetch error:', error);

@@ -4,11 +4,24 @@ const router = express.Router();
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+router.get('/', async (req, res) => {
+  try {
+    const { uid } = req.query;
+    const transactions = await prisma.transactions.findMany({
+      where: { uid },
+    });
+    res.json(transactions);
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 router.post('/', async (req, res) => {
   console.log('Received transaction data:', req.body);
   try {
     const {
-      userId,
+      uid,
       symbol,
       shares,
       price,
@@ -16,7 +29,7 @@ router.post('/', async (req, res) => {
       transactionDate,
     } = req.body;
 
-    if (!userId || !symbol || !shares || !price || !transactionType) {
+    if (!uid || !symbol || !shares || !price || !transactionType) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -24,12 +37,12 @@ router.post('/', async (req, res) => {
 
     const newTransaction = await prisma.transactions.create({
       data: {
-        userId,
+        uid,
         symbol,
         shares,
         price,
-        transactionType,
-        transactionDate: transactionDate ? new Date(transactionDate) : undefined,
+        transaction_type: transactionType,
+        transaction_date: transactionDate ? new Date(transactionDate) : undefined,
         // totalAmount,
       },
     });
