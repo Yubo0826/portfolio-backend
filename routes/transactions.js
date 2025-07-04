@@ -28,15 +28,13 @@ router.post('/', async (req, res) => {
       assetType,
       shares,
       price,
-      transactionType,
-      transactionDate,
+      transaction_type,
+      transaction_date,
     } = req.body;
 
-    if (!uid || !symbol || !shares || !price || !transactionType) {
+    if (!uid || !symbol || !shares || !price || !transaction_type) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
-
-    // const totalAmount = shares * price;
 
     await prisma.transactions.create({
       data: {
@@ -46,16 +44,44 @@ router.post('/', async (req, res) => {
         asset_type: assetType,
         shares,
         price,
-        transaction_type: transactionType,
-        transaction_date: transactionDate ? new Date(transactionDate) : undefined,
-        // totalAmount,
+        transaction_type: transaction_type,
+        transaction_date: transaction_date ? new Date(transaction_date) : undefined,
       },
     });
+
+    // 以下更新 holdings 資料表 
+    const existing = await prisma.holdings.findUnique({
+      where: {
+        uid,
+        symbol,
+      },
+    });
+
+    // 如果是買入操作
+    if (transaction_type === 'sell') {
+      if (!existing || existing.shares < shares) {
+        return res.status(400).json({ message: 'Not enough shares to sell' });
+      }
+      await prisma.holdings.update({
+        where: {
+          uid,
+          symbol,
+        },
+        data: {
+          total_shares: existing ? existing.total_shares - shares : shares,
+          avg_cost: existing ? (existing.avg_cost * existing.total_shares + price * shares) / (existing.total_shares + shares) : price,
+          last_updated: new Date(),
+        },
+      });
+    }
+
 
     const transactions = await prisma.transactions.findMany({
       where: { uid },
     });
     res.status(201).json(transactions);
+
+
   } catch (error) {
     console.error('Error creating transaction:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -72,8 +98,8 @@ router.put('/:id', async (req, res) => {
     assetType,
     shares,
     price,
-    transactionType,
-    transactionDate,
+    transaction_type,
+    transaction_date,
   } = req.body;
 
   try {
@@ -86,8 +112,8 @@ router.put('/:id', async (req, res) => {
         asset_type: assetType,
         shares,
         price,
-        transaction_type: transactionType,
-        transaction_date: transactionDate ? new Date(transactionDate) : undefined,
+        transaction_type: transaction_type,
+        transaction_date: transaction_date ? new Date(transaction_date) : undefined,
       },
     });
     res.json(updatedTransaction);
