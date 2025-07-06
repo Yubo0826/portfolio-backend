@@ -61,4 +61,6 @@ model holdings {
   name              String?   @db.VarChar(255)
   asset_type        String?   @db.VarChar(255)
   users             users?    @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([uid, symbol])
 }

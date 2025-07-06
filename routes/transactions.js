@@ -10,7 +10,13 @@ router.get('/', async (req, res) => {
     const transactions = await prisma.transactions.findMany({
       where: { uid },
     });
-    res.json(transactions);
+    const holdings = await prisma.holdings.findMany({
+      where: { uid },
+    });
+    res.json({
+      transactions,
+      holdings,
+    });
   } catch (error) {
     console.error('Error fetching transactions:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -155,7 +161,13 @@ router.post('/', async (req, res) => {
     const transactions = await prisma.transactions.findMany({
       where: { uid },
     });
-    res.status(201).json(transactions);
+    const holdings = await prisma.holdings.findMany({
+      where: { uid },
+    });
+    res.status(201).json({
+      transactions,
+      holdings,
+    });
 
   } catch (error) {
     console.error('Error creating transaction:', error);
@@ -179,7 +191,7 @@ router.put('/:id', async (req, res) => {
   } = req.body;
 
   try {
-    const updatedTransaction = await prisma.transactions.update({
+    await prisma.transactions.update({
       where: { id: Number(id) },
       data: {
         uid,
@@ -193,7 +205,20 @@ router.put('/:id', async (req, res) => {
         transaction_date: transactionDate ? new Date(transactionDate) : undefined,
       },
     });
-    res.json(updatedTransaction);
+    
+
+    // 更新 holdings 資料表  0706 未完成
+    
+    const transactions = await prisma.transactions.findMany({
+      where: { uid },
+    });
+    const holdings = await prisma.holdings.findMany({
+      where: { uid },
+    });
+    res.json({
+      transactions,
+      holdings,
+    });
   } catch (error) {
     console.error('Error updating transaction:', error);
     res.status(500).json({ message: 'Internal server error' });
