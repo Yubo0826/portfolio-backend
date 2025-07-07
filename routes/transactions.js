@@ -106,7 +106,7 @@ router.put('/:id', async (req, res) => {
     const oldShares = oldTransaction ? Number(oldTransaction.shares) : 0;
     let updatedShares = Number(shares) || 0;
 
-    // 處理 shares
+    // 特別處理賣出 shares
     if (transactionType === 'sell' && oldShares > shares) {
       transactionType = 'buy'; // 如果是賣出，且新股數小於舊股數，則視為買入
       updatedShares = oldShares - shares;
@@ -115,7 +115,7 @@ router.put('/:id', async (req, res) => {
     }
     
     // 更新 holdings 資料表
-    const result = await updateHoldings(uid, symbol, updatedShares, price, transactionType);
+    const result = await updateHoldings(uid, symbol, name, assetType, updatedShares, price, transactionType);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -154,6 +154,7 @@ router.put('/:id', async (req, res) => {
 
 // Delete a transaction
 router.delete('/', async (req, res) => {
+  const { uid } = req.query;
   const { ids } = req.body; // e.g., { ids: [1, 2, 3] }
 
   if (!Array.isArray(ids) || ids.length === 0) {
@@ -239,8 +240,12 @@ router.delete('/', async (req, res) => {
 
 
     // Step 5: 回傳最新資料
-    const transactions = await prisma.transactions.findMany();
-    const holdings = await prisma.holdings.findMany();
+    const transactions = await prisma.transactions.findMany({
+      where: { uid },
+    });
+    const holdings = await prisma.holdings.findMany({
+      where: { uid },
+    });
 
     res.status(200).json({
       transactions,
