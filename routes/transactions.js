@@ -43,103 +43,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // 以下更新 holdings 資料表 
-    const existing = await prisma.holdings.findFirst({
-      where: {
-        uid,
-        symbol,
-      },
-    });
-
-    console.log('Existing holdings:', existing);
-
-    if (!existing && transactionType === 'sell') {
-      // 如果 holdings 中不存在該股票，且是賣出操作，則回傳錯誤
-      return res.status(400).json({
-        message: 'Cannot sell shares that are not held',
-      });
-    }
-
-    if (!existing) {
-      // 如果 holdings 中不存在該股票，則新增
-      await prisma.holdings.create({
-        data: {
-          users: {connect: { uid } }, // 連接到使用者
-          symbol,
-          name,
-          asset_type: assetType,
-          total_shares: shares,
-          avg_cost: price, // 初始平均成本為當前價格
-          last_updated: new Date(),
-        },
-      });
-    } else {
-      // 如果 holdings 中已存在該股票，則更新
-      // 如果是 賣出 操作
-      if (transactionType === 'sell') {
-        const leaveShares = Number(existing.total_shares) - Number(shares);
-        if (leaveShares < 0) {
-          // 如果賣出股數大於持有股數，則回傳錯誤
-          return res.status(400).json({
-            message: 'Not enough shares to sell',
-            existing_shares: existing.total_shares,
-          });
-        } else if (leaveShares === 0) {
-          // 如果賣出後剩餘 0 股，則刪除 holdings
-          await prisma.holdings.delete({
-            where: {
-              uid_symbol: {
-                uid,
-                symbol,
-              }
-            },
-          });
-          console.log('Holdings deleted for symbol:', symbol);
-          // return res.status(200).json({ message: 'Holdings deleted' });
-        } else {
-          // 如果賣出後還有剩餘股數，則更新 holdings
-          await prisma.holdings.update({
-            where: {
-              uid_symbol: {
-                uid,
-                symbol,
-              }
-            },
-            data: {
-              total_shares: leaveShares,
-              avg_cost: existing.avg_cost,  // 賣出時不改變平均成本
-              last_updated: new Date(),
-            },
-          });
-        }
-      } else {
-        // 如果是 購買 操作
-        const totalOldCost = Number(existing.avg_cost) * Number(existing.total_shares);
-        const totalNewCost = Number(price) * Number(shares) + Number(fee);
-        const totalShares = Number(existing.total_shares) + Number(shares);
-
-        const avgCost = totalShares > 0 ? Number(((totalOldCost + totalNewCost) / totalShares).toFixed(2)) : 0;
-
-        console.log('totalOldCost', totalOldCost);
-        console.log('totalNewCost', totalNewCost);
-        console.log('totalShares', totalShares);
-        console.log('avgCost', avgCost);
-        const updateHolding = await prisma.holdings.update({
-          where: {
-            uid_symbol: {
-              uid,
-              symbol,
-            }
-          },
-          data: {
-            total_shares: totalShares,
-            avg_cost: avgCost,
-            last_updated: new Date(),
-          },
-        });
-
-        console.log('Updated holdings:', updateHolding);
-      }
+    // 以下更新 holdings 資料表
+    const result = await updateHoldings(uid, symbol, name, assetType, shares, price, transactionType);
+    if (result.message !== 'Holdings updated successfully') {
+      console.log('Error updating holdings:', result.message);
+      return res.status(400).json({ message: result.message });
     }
 
     // 新增交易紀錄
@@ -191,6 +99,28 @@ router.put('/:id', async (req, res) => {
   } = req.body;
 
   try {
+    // 找到舊的交易紀錄
+    const oldTransaction = await prisma.transactions.findFirst({
+      where: { id: Number(id) },
+    });
+    const oldShares = oldTransaction ? Number(oldTransaction.shares) : 0;
+    let updatedShares = Number(shares) || 0;
+
+    // 處理 shares
+    if (transactionType === 'sell' && oldShares > shares) {
+      transactionType = 'buy'; // 如果是賣出，且新股數小於舊股數，則視為買入
+      updatedShares = oldShares - shares;
+    } else if (transactionType === 'sell' && oldShares < shares) {
+      updatedShares = shares - oldShares;
+    }
+    
+    // 更新 holdings 資料表
+    const result = await updateHoldings(uid, symbol, updatedShares, price, transactionType);
+    if (result.message !== 'Holdings updated successfully') {
+      console.log('Error updating holdings:', result.message);
+      return res.status(400).json({ message: result.message });
+    }
+
     await prisma.transactions.update({
       where: { id: Number(id) },
       data: {
@@ -205,9 +135,6 @@ router.put('/:id', async (req, res) => {
         transaction_date: transactionDate ? new Date(transactionDate) : undefined,
       },
     });
-    
-
-    // 更新 holdings 資料表  0706 未完成
     
     const transactions = await prisma.transactions.findMany({
       where: { uid },
@@ -234,17 +161,180 @@ router.delete('/', async (req, res) => {
   }
 
   try {
+    // Step 1: 先找出將要刪除的交易資料
+    const transactionsToDelete = await prisma.transactions.findMany({
+      where: {
+        id: { in: ids.map(Number) },
+      },
+    });
+
+    if (transactionsToDelete.length === 0) {
+      return res.status(404).json({ message: 'No transactions found to delete' });
+    }
+
+    // Step 2: 建立受影響的 holdings 清單
+    const affectedHoldingsSet = new Set(
+      transactionsToDelete.map(tx => `${tx.uid}|${tx.symbol}`)
+    );
+
+    // Step 3: 刪除交易紀錄
     await prisma.transactions.deleteMany({
       where: {
         id: { in: ids.map(Number) },
       },
     });
-    res.status(204).send('deleted');
+
+     // Step 4: 重新計算每一筆受影響的 holdings
+    for (const key of affectedHoldingsSet) {
+      const [uid, symbol] = key.split('|');
+
+      // 找出剩下的該股票所有交易
+      const remainingTxs = await prisma.transactions.findMany({
+        where: {
+          uid,
+          symbol,
+        },
+      });
+
+      // 累加剩下交易的 shares 和成本
+      let totalShares = 0;
+      let totalCost = 0;
+
+      for (const tx of remainingTxs) {
+        const s = Number(tx.shares);
+        const p = Number(tx.price);
+        const f = Number(tx.fee ?? 0);
+
+        if (tx.transaction_type === 'buy') {
+          totalShares += s;
+          totalCost += s * p + f;
+        } else if (tx.transaction_type === 'sell') {
+          totalShares -= s;
+        }
+      }
+
+      if (totalShares <= 0) {
+        // 無剩餘 shares，刪除 holdings
+        await prisma.holdings.delete({
+          where: {
+            uid_symbol: { uid, symbol },
+          },
+        });
+      } else {
+        const avgCost = Number((totalCost / totalShares).toFixed(2));
+
+        await prisma.holdings.update({
+          where: {
+            uid_symbol: { uid, symbol },
+          },
+          data: {
+            total_shares: totalShares,
+            avg_cost: avgCost,
+            last_updated: new Date(),
+          },
+        });
+      }
+    }
+
+
+
+    // Step 5: 回傳最新資料
+    const transactions = await prisma.transactions.findMany();
+    const holdings = await prisma.holdings.findMany();
+
+    res.status(200).json({
+      transactions,
+      holdings,
+    });
   } catch (error) {
     console.error('Error deleting transactions:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+const updateHoldings = async (uid, symbol, name, assetType, shares, price, transactionType) => {
+  const existing = await prisma.holdings.findFirst({
+    where: {
+      uid,
+      symbol,
+    },
+  });
+
+  if (!existing && transactionType === 'sell') return { message: 'No existing holdings found' };
+
+  if (transactionType === 'sell') { 
+    const leaveShares = Number(existing.total_shares) - Number(shares);
+    if (leaveShares <= 0) {
+      // 如果賣出後沒有剩餘股數，則刪除 holdings
+      await prisma.holdings.delete({
+        where: {
+          uid_symbol: {
+            uid,
+            symbol,
+          },
+        },
+      });
+      console.log('Holdings deleted for symbol:', symbol);
+    } else {
+      // 如果賣出後還有剩餘股數，則更新 holdings
+      await prisma.holdings.update({
+        where: {
+          uid_symbol: {
+            uid,
+            symbol,
+          },
+        },
+        data: {
+          total_shares: leaveShares,
+          avg_cost: existing.avg_cost,  // 賣出時不改變平均成本
+          last_updated: new Date(),
+        },
+      });
+    }
+  } else {
+    // 如果是 購買 操作
+    if (existing && existing.total_shares > 0) {
+      // 如果已有 holdings，則更新
+      const totalOldCost = Number(existing.avg_cost) * Number(existing.total_shares);
+      const totalNewCost = Number(price) * Number(shares);
+      const totalShares = Number(existing.total_shares) + Number(shares);
+  
+      const avgCost = totalShares > 0 ? Number(((totalOldCost + totalNewCost) / totalShares).toFixed(2)) : 0;
+  
+      await prisma.holdings.update({
+        where: {
+          uid_symbol: {
+            uid,
+            symbol,
+          },
+        },
+        data: {
+          total_shares: totalShares,
+          avg_cost: avgCost,
+          last_updated: new Date(),
+        },
+      });
+    } else {
+      // 如果沒有 existing holdings，則新增一筆
+      await prisma.holdings.create({
+        data: {
+          users: { connect: { uid } }, // 連接到使用者
+          symbol,
+          name,
+          asset_type: assetType,
+          total_shares: shares,
+          avg_cost: price,  // 初始平均成本為購買價格
+          last_updated: new Date(),
+        },
+      });
+      console.log('New holdings created for symbol:', symbol);
+    }
+  }
+
+  return {
+    message: 'Holdings updated successfully',
+  };
+};
 
 
 export default router;
