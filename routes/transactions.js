@@ -104,18 +104,34 @@ router.put('/:id', async (req, res) => {
       where: { id: Number(id) },
     });
     const oldShares = oldTransaction ? Number(oldTransaction.shares) : 0;
-    let updatedShares = Number(shares) || 0;
+    const newShares = Number(shares) || 0;
+    let updatedShares = newShares;
 
-    // 特別處理賣出 shares
-    if (transactionType === 'sell' && oldShares > shares) {
-      transactionType = 'buy'; // 如果是賣出，且新股數小於舊股數，則視為買入
-      updatedShares = oldShares - shares;
-    } else if (transactionType === 'sell' && oldShares < shares) {
-      updatedShares = shares - oldShares;
+    if (newShares === oldShares && transactionType === oldTransaction.transaction_type) {
+      // 如果 shares 和 transactionType 都沒有變化，則不需要更新
+      return res.status(201).json({ message: 'No changes detected, transaction not updated' });
     }
+
+    let newTransactionType = transactionType;
     
+    // 處理 賣出 shares
+    if (transactionType === 'sell' && oldShares > newShares) {
+      newTransactionType = 'buy'; // 如果是賣出，且新股數小於舊股數，則視為買入
+      updatedShares = oldShares - newShares;
+    } else if (transactionType === 'sell' && oldShares < newShares) {
+      updatedShares = newShares - oldShares;
+    }
+
+    // 處理 買入 shares
+    if (transactionType === 'buy' && newShares > oldShares) {
+      updatedShares = newShares - oldShares;
+    } else if (transactionType === 'buy' && newShares < oldShares) {
+      newTransactionType = 'sell'; // 如果是買入，且新股數小於舊股數，則視為賣出
+      updatedShares = oldShares - newShares;
+    } 
+
     // 更新 holdings 資料表
-    const result = await updateHoldings(uid, symbol, name, assetType, updatedShares, price, transactionType);
+    const result = await updateHoldings(uid, symbol, name, assetType, updatedShares, price, newTransactionType);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -142,7 +158,7 @@ router.put('/:id', async (req, res) => {
     const holdings = await prisma.holdings.findMany({
       where: { uid },
     });
-    res.json({
+    res.status(200).json({
       transactions,
       holdings,
     });
