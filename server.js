@@ -24,12 +24,14 @@ import transactionsRoute from './routes/transactions.js';
 import userRoute from './routes/users.js';
 import searchRoute from './routes/tiingo/search.js';
 import holdingsRoute from './routes/holdings.js';
+import portfolioRoute from './routes/portfolio.js';
 
 // 路由掛載
 app.use('/api/transactions', transactionsRoute);
 app.use('/api/user', userRoute);
 app.use('/api/search', searchRoute);
 app.use('/api/holdings', holdingsRoute);
+app.use('/api/portfolio', portfolioRoute);
 
 app.listen(PORT, () => {
   console.log(`🚀 Tiingo Proxy Server running at http://localhost:${PORT}`);
