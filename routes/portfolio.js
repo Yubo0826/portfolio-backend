@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    await prisma.portfolios.create({
+    const newPortfolio = await prisma.portfolios.create({
       data: {
         uid,
         name,
@@ -41,10 +41,91 @@ router.post('/', async (req, res) => {
     });
     
     res.status(200).json({
-      message: 'Portfolio created successfully'
+      message: 'Portfolio created successfully',
+      portfolio: newPortfolio,
     });
   } catch (error) {
     console.error('Error creating portfolio:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+router.put('/', async (req, res) => {
+  console.log('Received /api/portfolio put request:', req.body);
+  const { 
+    id,
+    name,
+    description,
+   } = req.body;
+
+  if (!id || !name) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  try {
+    const updatedPortfolio = await prisma.portfolios.update({
+      where: { id: Number(id) },
+      data: {
+        name,
+        description,
+      },
+    });
+    
+    res.status(200).json({
+      message: 'Portfolio updated successfully',
+      portfolio: updatedPortfolio,
+    });
+  } catch (error) {
+    console.error('Error updating portfolio:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+router.delete('/', async (req, res) => {
+  const { ids, uid } = req.body;
+  console.log('Received /api/portfolio delete request:', ids, uid);
+  if (!uid || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+  try {
+    // 確認 ids 所屬的 uid 是否正確
+    const portfolios = await prisma.portfolios.findMany({
+      where: {
+        id: { in: ids.map(Number) },
+        uid,
+      },
+    });
+    if (portfolios.length !== ids.length) {
+      return res.status(404).json({ message: 'Some portfolios not found for the user' });
+    }
+    // 刪除 portfolios
+    const deletedPortfolios = await prisma.portfolios.deleteMany({
+      where: {
+        id: { in: ids.map(Number) },
+        uid,
+      },
+    });
+
+    if (deletedPortfolios.count === 0) {
+      return res.status(404).json({ message: 'Portfolios not found' });
+    }
+
+    // 刪除連動的 holdings 和 transactions
+    await prisma.holdings.deleteMany({
+      where: {
+        uid
+      },
+    });
+
+    await prisma.transactions.deleteMany({
+      where: {
+        uid
+      },
+    });
+
+    res.json({ message: 'Portfolios deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting portfolios:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
