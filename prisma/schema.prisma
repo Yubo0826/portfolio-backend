@@ -54,7 +54,7 @@ model holdings {
   users             users?    @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
   portfolios        portfolios @relation(fields: [portfolio_id], references: [id], onDelete: Cascade)
 
-  @@unique([uid, symbol])
+  @@unique([uid, symbol, portfolio_id], name: "uid_symbol_portfolio")
 }
 
 model portfolios {
@@ -66,4 +66,21 @@ model portfolios {
   users       users      @relation(fields: [uid], references: [uid], onDelete: Cascade)
   holdings    holdings[]
   transactions transactions[]
+  allocation allocation[]
 }
+
+model allocation {
+  id         Int     @id @default(autoincrement())
+  uid        String   @db.VarChar(255)
+  symbol     String   @db.VarChar(10)
+  name       String?  @db.VarChar(255)
+  rate       Decimal  @db.Decimal(5, 4)
+  portfolio_id Int
+
+  // 關聯到 portfolios
+  portfolios portfolios @relation(fields: [portfolio_id], references: [id], onDelete: Cascade)
+
+  // @@index([uid, symbol])
+  @@unique([uid, symbol, portfolio_id])
+}
+

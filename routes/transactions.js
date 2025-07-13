@@ -6,12 +6,21 @@ const prisma = new PrismaClient();
 
 router.get('/', async (req, res) => {
   try {
-    const { uid } = req.query;
+    const { uid, portfolio_id } = req.query;
+    if (!uid || !portfolio_id) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    } 
     const transactions = await prisma.transactions.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     const holdings = await prisma.holdings.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     res.json({
       transactions,
@@ -29,22 +38,23 @@ router.post('/', async (req, res) => {
   try {
     const {
       uid,
+      portfolio_id,
       symbol,
       name,
-      assetType,
+      asset_type,
       shares,
       price,
       fee,
-      transactionType,
-      transactionDate,
+      transaction_type,
+      transaction_date,
     } = req.body;
 
-    if (!uid || !symbol || !shares || !price || !transactionType) {
+    if (!uid || !symbol || !shares || !price || !transaction_type || !portfolio_id) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     // 以下更新 holdings 資料表
-    const result = await updateHoldings(uid, symbol, name, assetType, shares, price, transactionType);
+    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, transaction_type);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -56,21 +66,27 @@ router.post('/', async (req, res) => {
         users: {connect: { uid } }, // 連接到使用者,
         symbol,
         name,
-        asset_type: assetType,
+        asset_type,
         shares,
         price,
         fee,
-        transaction_type: transactionType,
-        transaction_date: transactionDate ? new Date(transactionDate) : undefined,
+        transaction_type,
+        transaction_date: transaction_date ? new Date(transaction_date) : undefined,
       },
     });
 
     // 回傳新的所有交易紀錄
     const transactions = await prisma.transactions.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     const holdings = await prisma.holdings.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     res.status(201).json({
       transactions,
@@ -88,14 +104,15 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const {
     uid,
+    portfolio_id,
     symbol,
     name,
-    assetType,
+    asset_type,
     shares,
     fee,
     price,
-    transactionType,
-    transactionDate,
+    transaction_type,
+    transaction_date,
   } = req.body;
 
   try {
@@ -107,31 +124,31 @@ router.put('/:id', async (req, res) => {
     const newShares = Number(shares) || 0;
     let updatedShares = newShares;
 
-    if (newShares === oldShares && transactionType === oldTransaction.transaction_type) {
-      // 如果 shares 和 transactionType 都沒有變化，則不需要更新
+    if (newShares === oldShares && transaction_type === oldTransaction.transaction_type) {
+      // 如果 shares 和 transaction_type 都沒有變化，則不需要更新
       return res.status(201).json({ message: 'No changes detected, transaction not updated' });
     }
 
-    let newTransactionType = transactionType;
+    let newTransactionType = transaction_type;
     
     // 處理 賣出 shares
-    if (transactionType === 'sell' && oldShares > newShares) {
+    if (transaction_type === 'sell' && oldShares > newShares) {
       newTransactionType = 'buy'; // 如果是賣出，且新股數小於舊股數，則視為買入
       updatedShares = oldShares - newShares;
-    } else if (transactionType === 'sell' && oldShares < newShares) {
+    } else if (transaction_type === 'sell' && oldShares < newShares) {
       updatedShares = newShares - oldShares;
     }
 
     // 處理 買入 shares
-    if (transactionType === 'buy' && newShares > oldShares) {
+    if (transaction_type === 'buy' && newShares > oldShares) {
       updatedShares = newShares - oldShares;
-    } else if (transactionType === 'buy' && newShares < oldShares) {
+    } else if (transaction_type === 'buy' && newShares < oldShares) {
       newTransactionType = 'sell'; // 如果是買入，且新股數小於舊股數，則視為賣出
       updatedShares = oldShares - newShares;
     } 
 
     // 更新 holdings 資料表
-    const result = await updateHoldings(uid, symbol, name, assetType, updatedShares, price, newTransactionType);
+    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, updatedShares, price, newTransactionType);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -143,20 +160,26 @@ router.put('/:id', async (req, res) => {
         uid,
         symbol,
         name,
-        asset_type: assetType,
+        asset_type,
         shares,
         price,
         fee: fee || 0,
-        transaction_type: transactionType,
-        transaction_date: transactionDate ? new Date(transactionDate) : undefined,
+        transaction_type,
+        transaction_date: transaction_date ? new Date(transaction_date) : undefined,
       },
     });
     
     const transactions = await prisma.transactions.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     const holdings = await prisma.holdings.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     res.status(200).json({
       transactions,
@@ -170,8 +193,7 @@ router.put('/:id', async (req, res) => {
 
 // Delete a transaction
 router.delete('/', async (req, res) => {
-  const { uid } = req.query;
-  const { ids } = req.body; // e.g., { ids: [1, 2, 3] }
+  const { ids, uid, portfolio_id } = req.body; // e.g., { ids: [1, 2, 3] }
 
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ message: 'Invalid or empty ids array' });
@@ -191,7 +213,7 @@ router.delete('/', async (req, res) => {
 
     // Step 2: 建立受影響的 holdings 清單
     const affectedHoldingsSet = new Set(
-      transactionsToDelete.map(tx => `${tx.uid}|${tx.symbol}`)
+      transactionsToDelete.map(tx => `${tx.uid}|${tx.portfolio_id}|${tx.symbol}`)
     );
 
     // Step 3: 刪除交易紀錄
@@ -203,12 +225,13 @@ router.delete('/', async (req, res) => {
 
      // Step 4: 重新計算每一筆受影響的 holdings
     for (const key of affectedHoldingsSet) {
-      const [uid, symbol] = key.split('|');
+      const [uid, portfolio_id, symbol] = key.split('|');
 
       // 找出剩下的該股票所有交易
       const remainingTxs = await prisma.transactions.findMany({
         where: {
           uid,
+          portfolio_id,
           symbol,
         },
       });
@@ -234,7 +257,7 @@ router.delete('/', async (req, res) => {
         // 無剩餘 shares，刪除 holdings
         await prisma.holdings.delete({
           where: {
-            uid_symbol: { uid, symbol },
+            uid_symbol_portfolio: { uid, symbol, portfolio_id },
           },
         });
       } else {
@@ -242,7 +265,7 @@ router.delete('/', async (req, res) => {
 
         await prisma.holdings.update({
           where: {
-            uid_symbol: { uid, symbol },
+            uid_symbol_portfolio: { uid, symbol, portfolio_id },
           },
           data: {
             total_shares: totalShares,
@@ -257,10 +280,16 @@ router.delete('/', async (req, res) => {
 
     // Step 5: 回傳最新資料
     const transactions = await prisma.transactions.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
     const holdings = await prisma.holdings.findMany({
-      where: { uid },
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
     });
 
     res.status(200).json({
@@ -273,10 +302,12 @@ router.delete('/', async (req, res) => {
   }
 });
 
-const updateHoldings = async (uid, symbol, name, assetType, shares, price, transactionType) => {
+
+const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares, price, transactionType) => {
   const existing = await prisma.holdings.findFirst({
     where: {
       uid,
+      portfolio_id: portfolioId,
       symbol,
     },
   });
@@ -291,6 +322,7 @@ const updateHoldings = async (uid, symbol, name, assetType, shares, price, trans
         where: {
           uid_symbol: {
             uid,
+            portfolio_id: portfolioId,
             symbol,
           },
         },
@@ -302,6 +334,7 @@ const updateHoldings = async (uid, symbol, name, assetType, shares, price, trans
         where: {
           uid_symbol: {
             uid,
+            portfolio_id: portfolioId,
             symbol,
           },
         },
@@ -326,6 +359,7 @@ const updateHoldings = async (uid, symbol, name, assetType, shares, price, trans
         where: {
           uid_symbol: {
             uid,
+            portfolioId,
             symbol,
           },
         },
@@ -339,7 +373,8 @@ const updateHoldings = async (uid, symbol, name, assetType, shares, price, trans
       // 如果沒有 existing holdings，則新增一筆
       await prisma.holdings.create({
         data: {
-          users: { connect: { uid } }, // 連接到使用者
+          users: { connect: { uid } }, // 關聯到 users.uid
+          portfolios: { connect: { portfolio_id: portfolioId } }, // 關聯到 portfolios.id
           symbol,
           name,
           asset_type: assetType,
