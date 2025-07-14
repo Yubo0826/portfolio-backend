@@ -41,11 +41,11 @@ router.post('/', async (req, res) => {
     });
     
     res.status(200).json({
-      message: 'Portfolio created successfully',
+      message: 'Portfolio saved successfully',
       portfolio: newPortfolio,
     });
   } catch (error) {
-    console.error('Error creating portfolio:', error);
+    console.error('Error saving portfolio:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

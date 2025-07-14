@@ -64,6 +64,7 @@ router.post('/', async (req, res) => {
     await prisma.transactions.create({
       data: {
         users: {connect: { uid } }, // 連接到使用者,
+        portfolios: { connect: { id: Number(portfolio_id) } },
         symbol,
         name,
         asset_type,
@@ -157,10 +158,6 @@ router.put('/:id', async (req, res) => {
     await prisma.transactions.update({
       where: { id: Number(id) },
       data: {
-        uid,
-        symbol,
-        name,
-        asset_type,
         shares,
         price,
         fee: fee || 0,
@@ -320,7 +317,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
       // 如果賣出後沒有剩餘股數，則刪除 holdings
       await prisma.holdings.delete({
         where: {
-          uid_symbol: {
+          uid_symbol_portfolio: {
             uid,
             portfolio_id: portfolioId,
             symbol,
@@ -332,7 +329,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
       // 如果賣出後還有剩餘股數，則更新 holdings
       await prisma.holdings.update({
         where: {
-          uid_symbol: {
+          uid_symbol_portfolio: {
             uid,
             portfolio_id: portfolioId,
             symbol,
@@ -357,9 +354,9 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
   
       await prisma.holdings.update({
         where: {
-          uid_symbol: {
+          uid_symbol_portfolio: {
             uid,
-            portfolioId,
+            portfolio_id: portfolioId,
             symbol,
           },
         },
@@ -374,7 +371,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
       await prisma.holdings.create({
         data: {
           users: { connect: { uid } }, // 關聯到 users.uid
-          portfolios: { connect: { portfolio_id: portfolioId } }, // 關聯到 portfolios.id
+          portfolios: { connect: { id: Number(portfolioId) } }, // 關聯到 portfolios.id
           symbol,
           name,
           asset_type: assetType,

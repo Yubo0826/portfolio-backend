@@ -6,9 +6,12 @@ const prisma = new PrismaClient();
 
 router.get('/', async (req, res) => {
     try {
-        const { uid } = req.query;
+        const { uid, portfolio_id } = req.query;
+        if (!uid || !portfolio_id) {
+            return res.status(400).json({ message: 'Missing required fields' });
+        }
         const allocations = await prisma.allocation.findMany({
-        where: { uid },
+            where: { uid, portfolio_id: Number(portfolio_id) },
         });
         res.json(allocations);
     } catch (error) {
@@ -35,10 +38,10 @@ router.post('/', async (req, res) => {
         const allocations = await prisma.allocation.createMany({
             data: assets.map(asset => ({
                 uid,
+                portfolio_id: portfolioId,
                 symbol: asset.symbol,
                 name: asset.name,
                 rate: asset.rate,
-                portfolio_id: portfolioId,
             })),
         });
 

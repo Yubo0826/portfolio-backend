@@ -6,9 +6,12 @@ const prisma = new PrismaClient();
 
 router.get('/', async (req, res) => {
   try {
-    const { uid } = req.query;
+    const { uid, portfolio_id } = req.query;
+    if (!uid || !portfolio_id) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
     const holdings = await prisma.holdings.findMany({
-      where: { uid },
+      where: { uid, portfolio_id: Number(portfolio_id) },
     });
     res.json(holdings);
   } catch (error) {
@@ -18,15 +21,14 @@ router.get('/', async (req, res) => {
 });
 
 router.delete('/', async (req, res) => {
-  const { uid } = req.query;
-  const { ids } = req.body; // e.g., { ids: [1, 2, 3] }
+  const { ids, portfolio_id, uid } = req.body; // e.g., { ids: [1, 2, 3] }
 
-  console.log('Received /api/holdings delete request:', { uid, ids });
+  console.log('Received /api/holdings delete request:', { uid, ids, portfolio_id });
 
-  if (!uid || !Array.isArray(ids) || ids.length === 0) {
+  if (!uid || !Array.isArray(ids) || ids.length === 0 || !portfolio_id) {
     return res.status(400).json({ message: 'Missing required fields' });
   }
-  
+
   try {
     // 找出將要刪除的 symbols
     const holdingsToDelete = await prisma.holdings.findMany({
@@ -49,6 +51,7 @@ router.delete('/', async (req, res) => {
     await prisma.transactions.deleteMany({
       where: {
         uid: uid,
+        portfolio_id: Number(portfolio_id),
         symbol: {
           in: holdingsToDelete.map(h => h.symbol),
         },
@@ -60,7 +63,7 @@ router.delete('/', async (req, res) => {
     }
 
     const holdings = await prisma.holdings.findMany({
-      where: { uid },
+      where: { uid, portfolio_id: Number(portfolio_id) },
     });
     res.json({ message: 'Holdings deleted successfully', holdings });
   } catch (error) {
