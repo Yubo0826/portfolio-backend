@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
     console.log('Received /api/allocation update request:', req.body);
-    const { assets, uid, portfolioId } = req.body;
+    const { assets, uid, portfolio_id } = req.body;
 
     if (!assets || !Array.isArray(assets) || assets.length === 0) {
         return res.status(400).json({ message: 'Missing required fields' });
@@ -31,17 +31,17 @@ router.post('/', async (req, res) => {
     try {
         // 刪除舊的 allocations
         await prisma.allocation.deleteMany({
-            where: { uid, portfolio_id: portfolioId },
+            where: { uid, portfolio_id },
         });
 
         // 新增新的 allocations
         const allocations = await prisma.allocation.createMany({
             data: assets.map(asset => ({
                 uid,
-                portfolio_id: portfolioId,
+                portfolio_id,
                 symbol: asset.symbol,
                 name: asset.name,
-                rate: asset.rate,
+                target: asset.target,
             })),
         });
 
