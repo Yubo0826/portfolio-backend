@@ -13,9 +13,47 @@ router.get('/', async (req, res) => {
     const holdings = await prisma.holdings.findMany({
       where: { uid, portfolio_id: Number(portfolio_id) },
     });
+    console.log('Fetched holdings:', holdings);
     res.json(holdings);
   } catch (error) {
     console.error('Error fetching holdings:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+router.post('/refresh-prices', async (req, res) => {
+  const { uid, portfolio_id } = req.body;
+  
+  console.log('Received /api/holdings/refresh-prices request:', { uid, portfolio_id });
+
+  if (!uid || !portfolio_id) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  try {
+    const holdings = await prisma.holdings.findMany({
+      where: { uid, portfolio_id: Number(portfolio_id) },
+    });
+
+    if (holdings.length === 0) {
+      return res.status(404).json({ message: 'No holdings found for this user and portfolio' });
+    }
+
+    // 更新每個 holdings 的價格
+    const updatedHoldings = await Promise.all(
+      holdings.map(async (holding) => {
+        // 假設這裡有一個函數可以獲取最新價格
+        const latestPrice = await getLatestPrice(holding.symbol);
+        return prisma.holdings.update({
+          where: { id: holding.id },
+          data: { current_price: latestPrice },
+        });
+      })
+    );
+
+    res.json({ message: 'Holdings prices refreshed successfully', holdings: updatedHoldings });
+  } catch (error) {
+    console.error('Error refreshing holdings prices:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -72,5 +110,16 @@ router.delete('/', async (req, res) => {
   } 
 });
 
-
+const getLatestPrice = async (symbol) => {
+  const url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?&token=${process.env.TIINGO_API_KEY}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+    const data = await response.json();
+    return data[0].close; // 假設返回的數據包含 close 價格
+  } catch (error) {
+    console.error('Error fetching latest price:', error);
+    throw new Error('Failed to fetch latest price');
+  }
+};
 export default router;
