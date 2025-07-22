@@ -90,6 +90,7 @@ router.post('/', async (req, res) => {
        },
     });
     res.status(201).json({
+      message: 'Transaction created successfully',
       transactions,
       holdings,
     });
