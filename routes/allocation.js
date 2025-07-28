@@ -13,6 +13,9 @@ router.get('/', async (req, res) => {
         const allocations = await prisma.allocation.findMany({
             where: { uid, portfolio_id: Number(portfolio_id) },
         });
+        allocations.forEach(allocation => {
+            allocation.target = parseFloat(allocation.target.toFixed(2)); // 確保 target 精度為兩位小數
+        });
         res.json(allocations);
     } catch (error) {
         console.error('Error fetching allocations:', error);
@@ -44,6 +47,20 @@ router.post('/', async (req, res) => {
                 target: asset.target,
             })),
         });
+
+        // 同步 target 到 holdings
+        await Promise.all(assets.map(asset =>
+            prisma.holdings.updateMany({
+                where: {
+                    uid,
+                    portfolio_id,
+                    symbol: asset.symbol,
+                },
+                data: {
+                    target_percentage: asset.target,
+                },
+            })
+        ));
 
         res.status(200).json({
             message: 'Allocations updated successfully',
