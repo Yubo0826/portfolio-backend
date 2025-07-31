@@ -27,7 +27,12 @@ router.get('/price/:symbol', async (req, res) => {
   console.log('Received /api/search/price request:', req.params);
   const symbol = req.params.symbol;
   const { startDate, endDate } = req.query;
-  const url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?startDate=${startDate}&endDate=${endDate}&token=${apiKey}`;
+  let url
+  if (!startDate && !endDate) {
+    url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?token=${apiKey}`;  // 拿到最近的價格
+  } else {
+    url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?startDate=${startDate}&endDate=${endDate}&token=${apiKey}`;
+  }
   console.log('Tiingo price URL:', url);
 
   try {
