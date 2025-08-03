@@ -1,5 +1,6 @@
 import express from 'express';
 const router = express.Router();
+import yahooFinance from 'yahoo-finance2';
 
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
@@ -111,12 +112,10 @@ router.delete('/', async (req, res) => {
 });
 
 const getLatestPrice = async (symbol) => {
-  const url = `https://api.tiingo.com/tiingo/daily/${symbol}/prices?&token=${process.env.TIINGO_API_KEY}`;
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-    const data = await response.json();
-    return data[0].close; // 假設返回的數據包含 close 價格
+    const data = await yahooFinance.quote(symbol);
+    console.log(`${symbol} latest price data:`, data.regularMarketPreviousClose);
+    return data.regularMarketPreviousClose || data.regularMarketPrice || data.regularMarketOpen || 0;
   } catch (error) {
     console.error('Error fetching latest price:', error);
     throw new Error('Failed to fetch latest price');

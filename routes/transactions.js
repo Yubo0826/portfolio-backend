@@ -211,7 +211,7 @@ router.delete('/', async (req, res) => {
 
     // Step 2: 建立受影響的 holdings 清單
     const affectedHoldingsSet = new Set(
-      transactionsToDelete.map(tx => `${tx.uid}|${tx.portfolio_id}|${tx.symbol}`)
+      transactionsToDelete.map(tx => tx.symbol)
     );
 
     // Step 3: 刪除交易紀錄
@@ -222,8 +222,7 @@ router.delete('/', async (req, res) => {
     });
 
      // Step 4: 重新計算每一筆受影響的 holdings
-    for (const key of affectedHoldingsSet) {
-      const [uid, portfolio_id, symbol] = key.split('|');
+    for (const symbol of affectedHoldingsSet) {
 
       // 找出剩下的該股票所有交易
       const remainingTxs = await prisma.transactions.findMany({
@@ -291,6 +290,7 @@ router.delete('/', async (req, res) => {
     });
 
     res.status(200).json({
+      message: 'Transactions deleted successfully',
       transactions,
       holdings,
     });
