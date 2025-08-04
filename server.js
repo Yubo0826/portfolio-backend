@@ -27,6 +27,7 @@ import holdingsRoute from './routes/holdings.js';
 import portfolioRoute from './routes/portfolio.js';
 import allocationRoute from './routes/allocation.js';
 import yahooFinanceRoute from './routes/yahooFinance.js';
+import dividendsRoute from './routes/dividends.js';
 
 // 路由掛載
 app.use('/api/transactions', transactionsRoute);
@@ -36,6 +37,7 @@ app.use('/api/holdings', holdingsRoute);
 app.use('/api/portfolio', portfolioRoute);
 app.use('/api/allocation', allocationRoute);
 app.use('/api/yahoo', yahooFinanceRoute);
+app.use('/api/dividends', dividendsRoute);
 
 app.listen(PORT, () => {
   console.log(`🚀 Tiingo Proxy Server running at http://localhost:${PORT}`);

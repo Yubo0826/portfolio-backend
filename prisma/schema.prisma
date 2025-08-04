@@ -89,6 +89,7 @@ model dividends {
   id            Int       @id @default(autoincrement())
   uid           String    @db.VarChar(255)
   symbol        String    @db.VarChar(10)
+  name          String?   @db.VarChar(255)
   portfolio_id  Int
   date          DateTime
   amount        Decimal   @db.Decimal(10, 4)

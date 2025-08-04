@@ -28,15 +28,15 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/sync', async (req, res) => {
-    const { uid, portfolio_id, symbol } = req.body;
+    const { uid, portfolio_id } = req.body;
 
-    if (!uid || !portfolio_id || !symbol) {
+    if (!uid || !portfolio_id) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     try {
       // 同步單一股票的配息紀錄
-      await syncDividendsForUserPortfolio(uid, portfolio_id);
+      await syncDividendsForUserHoldings(uid, portfolio_id);
       const dividends = await prisma.dividends.findMany({
       where: {
         uid,
@@ -54,10 +54,10 @@ router.post('/sync', async (req, res) => {
 
 async function syncDividendsForUserHoldings(uid, portfolioId) {
   // 取得該使用者該投資組合的所有交易紀錄
-  const transactions = await prisma.transaction.findMany({
+  const transactions = await prisma.transactions.findMany({
     where: {
-      userId: uid,
-      portfolioId,
+      uid,
+      portfolio_id: Number(portfolioId)
     },
     orderBy: {
       date: 'asc',
@@ -87,7 +87,7 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
         period1,
         period2,
         interval: '1d',
-        events: ['dividends'],
+        // events: ['dividends'],
       });
 
       const dividends = result?.events?.dividends ?? [];
@@ -95,8 +95,8 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
       for (const dividend of dividends) {
         const existing = await prisma.dividend.findFirst({
           where: {
-            userId: uid,
-            portfolioId,
+            uid,
+            portfolio_id: Number(portfolioId),
             symbol,
             date: new Date(dividend.date * 1000),
           },
@@ -106,7 +106,7 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
           await prisma.dividend.create({
             data: {
               userId: uid,
-              portfolioId,
+              portfolio_id: Number(portfolioId),
               symbol,
               amount: dividend.amount,
               date: new Date(dividend.date * 1000),
