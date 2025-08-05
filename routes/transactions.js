@@ -126,10 +126,10 @@ router.put('/:id', async (req, res) => {
     const newShares = Number(shares) || 0;
     let updatedShares = newShares;
 
-    if (newShares === oldShares && transaction_type === oldTransaction.transaction_type) {
-      // 如果 shares 和 transaction_type 都沒有變化，則不需要更新
-      return res.status(201).json({ message: 'No changes detected, transaction not updated' });
-    }
+    // if (newShares === oldShares && transaction_type === oldTransaction.transaction_type && ) {
+    //   // 如果 shares 和 transaction_type 都沒有變化，則不需要更新
+    //   return res.status(201).json({ message: 'No changes detected, transaction not updated' });
+    // }
 
     let newTransactionType = transaction_type;
     

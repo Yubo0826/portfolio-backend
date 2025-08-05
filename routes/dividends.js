@@ -60,27 +60,39 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
       portfolio_id: Number(portfolioId)
     },
     orderBy: {
-      date: 'asc',
+      transaction_date: 'asc',
     },
   });
 
-  // 按 symbol 分組，找出每支股票的首次購買日
+  // 按 symbol 分組，並且找出每支股票的首次購買日
   const symbolGroups = {};
   for (const tx of transactions) {
     if (!symbolGroups[tx.symbol]) {
-      symbolGroups[tx.symbol] = tx.date;
+      symbolGroups[tx.symbol] = {
+        date: tx.transaction_date,
+        shares: tx.shares,
+        name: tx.name,
+      };
     } else {
-      const existingDate = symbolGroups[tx.symbol];
-      symbolGroups[tx.symbol] = new Date(Math.min(new Date(tx.date), new Date(existingDate)));
+      const existingDate = symbolGroups[tx.symbol].date;
+      symbolGroups[tx.symbol] = {
+        date: new Date(Math.min(new Date(tx.transaction_date), new Date(existingDate))),
+        shares: tx.shares,
+        name: tx.name,
+      };
     }
   }
+
+  console.log(symbolGroups);
 
   const now = new Date();
 
   for (const symbol of Object.keys(symbolGroups)) {
-    const fromDate = symbolGroups[symbol];
-    const period1 = Math.floor(new Date(fromDate).getTime() / 1000);
-    const period2 = Math.floor(now.getTime() / 1000);
+    const fromDate = symbolGroups[symbol].date;
+    const period1 = fromDate.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const period2 = now.toISOString().slice(0, 10);      // 'YYYY-MM-DD'
+
+    console.log(`同步 ${symbol} 的配息紀錄，時間範圍：${period1} 到 ${period2}`);
 
     try {
       const result = await yahooFinance.chart(symbol, {
@@ -89,11 +101,22 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
         interval: '1d',
         // events: ['dividends'],
       });
-
       const dividends = result?.events?.dividends ?? [];
 
+      console.log(dividends);
+
       for (const dividend of dividends) {
-        const existing = await prisma.dividend.findFirst({
+        const dividendDate = new Date(dividend.date * 1000); // 配息日期
+        
+        // 計算此配息發生前的持有總股數（所有已完成的交易）
+        const sharesAtDividend = transactions
+          .filter(tx => tx.symbol === symbol && new Date(tx.transaction_date) <= dividendDate)
+          .reduce((total, tx) => {
+            const shares = Number(tx.shares) || 0;
+            return tx.transaction_type === 'buy' ? total + shares : total - shares;
+          }, 0);
+
+        const existing = await prisma.dividends.findFirst({
           where: {
             uid,
             portfolio_id: Number(portfolioId),
@@ -103,13 +126,15 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
         });
 
         if (!existing) {
-          await prisma.dividend.create({
+          await prisma.dividends.create({
             data: {
-              userId: uid,
+              uid,
               portfolio_id: Number(portfolioId),
               symbol,
+              name: symbolGroups[symbol].name,
+              shares: sharesAtDividend,
+              date: dividendDate,
               amount: dividend.amount,
-              date: new Date(dividend.date * 1000),
             },
           });
         }
