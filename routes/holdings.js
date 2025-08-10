@@ -114,8 +114,8 @@ router.delete('/', async (req, res) => {
 const getLatestPrice = async (symbol) => {
   try {
     const data = await yahooFinance.quote(symbol);
-    console.log(`${symbol} latest price data:`, data.regularMarketPreviousClose);
-    return data.regularMarketPreviousClose || data.regularMarketPrice || data.regularMarketOpen || 0;
+    console.log(`Fetched latest price for ${symbol}:`, data);
+    return data.regularMarketPrice || data.regularMarketPreviousClose || data.regularMarketOpen || 0;
   } catch (error) {
     console.error('Error fetching latest price:', error);
     throw new Error('Failed to fetch latest price');
