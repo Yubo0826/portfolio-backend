@@ -4,6 +4,9 @@ import yahooFinance from 'yahoo-finance2';
 
 const router = express.Router();
 
+import { PrismaClient } from '../generated/prisma/index.js';
+const prisma = new PrismaClient();
+
 // 搜尋股票代碼（模糊查詢）
 router.get('/symbol', async (req, res) => {
     const { query } = req.query;
@@ -39,6 +42,49 @@ router.get('/chart', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// 使用者holdings的歷史股價
+router.get('/holdings-chart', async (req, res) => {
+    const { uid, portfolio_id, period1, period2, interval = '1d' } = req.query;
+    console.log('Received /api/yahooFinance/holdings-chart request:', req.query);
+    if (!uid || !portfolio_id) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+    try {
+      const holdings = await prisma.holdings.findMany({
+        where: { uid, portfolio_id: Number(portfolio_id) },
+      });
+
+      console.log('Fetched holdings for chart:', holdings);
+
+      if (!holdings || holdings.length === 0) {
+        return res.status(404).json({ message: 'No holdings found' });
+      }
+
+      const symbols = holdings.map(h => h.symbol);
+      
+      // 拉每一檔歷史
+      const symbolsData = await Promise.all(symbols.map(async (symbol) => {
+        return yahooFinance.chart(symbol, { period1, period2, interval });
+      }));
+
+      // 把每檔歷史股價合併
+      const mergedData = {};
+      symbolsData.forEach((data, index) => {
+        if (!data || !data.timestamp) return;
+        data.timestamp.forEach((time, i) => {
+          const price = data.indicators.quote[0].close[i];
+          if (price != null) {
+            mergedData[time] = (mergedData[time] || 0) + price;
+          }
+        });
+      });
+
+      res.json(mergedData);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
 });
 
 // 公司財報摘要
