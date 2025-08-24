@@ -56,8 +56,6 @@ router.get('/holdings-chart', async (req, res) => {
         where: { uid, portfolio_id: Number(portfolio_id) },
       });
 
-      console.log('Fetched holdings for chart:', holdings);
-
       if (!holdings || holdings.length === 0) {
         return res.status(404).json({ message: 'No holdings found' });
       }
@@ -65,23 +63,37 @@ router.get('/holdings-chart', async (req, res) => {
       const symbols = holdings.map(h => h.symbol);
       
       // 拉每一檔歷史
-      const symbolsData = await Promise.all(symbols.map(async (symbol) => {
+      const symbolDataArray = await Promise.all(symbols.map(async (symbol) => {
         return yahooFinance.chart(symbol, { period1, period2, interval });
       }));
 
-      // 把每檔歷史股價合併
-      const mergedData = {};
-      symbolsData.forEach((data, index) => {
-        if (!data || !data.timestamp) return;
-        data.timestamp.forEach((time, i) => {
-          const price = data.indicators.quote[0].close[i];
-          if (price != null) {
-            mergedData[time] = (mergedData[time] || 0) + price;
+      // 儲存每個日期的 close 總和
+      const mergedDataMap = {};
+
+      // 處理每個股票的 quotes 陣列
+      symbolDataArray.forEach(stock => {
+        console.log('Processing stock:', stock);
+        stock.quotes.forEach(quote => {
+          console.log('Processing quote:', quote.date, 'Close:', quote.close);
+          const date = quote.date.toISOString().split('T')[0]; // 取 '2025-01-08' 的格式
+          if (!mergedDataMap[date]) {
+            mergedDataMap[date] = 0;
           }
+          mergedDataMap[date] += quote.close;
         });
       });
 
-      res.json(mergedData);
+      // 轉換為特定格式的陣列
+      const mergedDataArray = Object.entries(mergedDataMap).map(([date, close]) => ({
+        date,
+        close: parseFloat(close.toFixed(2)) // 保留小數點兩位
+      }));
+
+      console.log(mergedDataArray);
+
+      res.json(
+        mergedDataArray // 回傳格式為 [{ date: '2025-01-08', close: 123.45 }, ...]
+      );
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
