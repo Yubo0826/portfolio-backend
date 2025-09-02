@@ -110,15 +110,31 @@ router.delete('/', async (req, res) => {
       return res.status(404).json({ message: 'Portfolios not found' });
     }
 
-    // 刪除連動的 holdings 和 transactions
+    // 刪除連動的 holdings & transactions & dividends & allocations
     await prisma.holdings.deleteMany({
       where: {
+        portfolio_id: { in: ids.map(Number) },
         uid
       },
     });
 
     await prisma.transactions.deleteMany({
       where: {
+        portfolio_id: { in: ids.map(Number) },
+        uid
+      },
+    });
+
+    await prisma.dividends.deleteMany({
+      where: {
+        portfolio_id: { in: ids.map(Number) },
+        uid
+      },
+    });
+
+    await prisma.allocation.deleteMany({
+      where: {
+        portfolio_id: { in: ids.map(Number) },
         uid
       },
     });
