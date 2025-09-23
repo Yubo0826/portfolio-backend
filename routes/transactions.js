@@ -101,6 +101,82 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Bulk create transactions
+router.post('/bulk', async (req, res) => {
+  console.log('Received bulk transaction data:', req.body);
+  try {
+    const { uid, portfolio_id, transactions } = req.body;
+
+    if (!uid || !portfolio_id || !Array.isArray(transactions) || transactions.length === 0) {
+      return res.status(400).json({ message: 'Missing required fields or transactions array is empty' });
+    }
+
+    for (const tx of transactions) {
+      const {
+        symbol,
+        name,
+        asset_type,
+        shares,
+        price,
+        fee,
+        transaction_type,
+        transaction_date,
+      } = tx;
+
+      if (!symbol || !shares || !price || !transaction_type) {
+        console.log('Skipping transaction due to missing fields:', tx);
+        continue; // Skip this transaction if required fields are missing
+      }
+
+      // 更新 holdings 資料表
+      const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, transaction_type);
+      if (result.message !== 'Holdings updated successfully') {
+        console.log('Error updating holdings for symbol', symbol, ':', result.message);
+        return res.status(400).json({ message: result.message });
+      }
+
+      // 新增交易紀錄
+      await prisma.transactions.create({
+        data: {
+          users: { connect: { uid } }, // 連接到使用者
+          portfolios: { connect: { id: Number(portfolio_id) } },
+          symbol,
+          name,
+          asset_type,
+          shares,
+          price,
+          fee,
+          transaction_type,
+          transaction_date: transaction_date ? new Date(transaction_date) : undefined,
+        },
+      });
+    }
+
+    // 回傳新的所有交易紀錄
+    const allTransactions = await prisma.transactions.findMany({
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
+    });
+    const holdings = await prisma.holdings.findMany({
+      where: { 
+        uid, 
+        portfolio_id: Number(portfolio_id)
+       },
+    });
+    res.status(201).json({
+      message: 'success',
+      transactions: allTransactions,
+      holdings,
+    });
+
+  } catch (error) {
+    console.error('Error creating bulk transactions:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Update a transaction
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
