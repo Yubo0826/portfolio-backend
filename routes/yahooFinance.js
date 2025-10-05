@@ -44,7 +44,7 @@ router.get('/chart', async (req, res) => {
   }
 });
 
-// 使用者holdings的歷史股價
+// 取得user holdings的歷史總價
 router.get('/holdings-chart', async (req, res) => {
     const { uid, portfolio_id, period1, period2, interval = '1d' } = req.query;
     console.log('Received /api/yahooFinance/holdings-chart request:', req.query);
@@ -93,6 +93,48 @@ router.get('/holdings-chart', async (req, res) => {
 
       res.json(
         mergedDataArray // 回傳格式為 [{ date: '2025-01-08', close: 123.45 }, ...]
+      );
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+});
+
+// 拿 user allocation 的歷史股價
+router.get('/allocation-chart', async (req, res) => {
+    const { uid, portfolio_id, period1, period2, interval = '1d' } = req.query;
+    console.log('Received /api/yahooFinance/allocation-chart request:', req.query);
+    if (!uid || !portfolio_id) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+    try {
+      const allocations = await prisma.allocation.findMany({
+        where: { uid, portfolio_id: Number(portfolio_id) },
+      });
+      if (!allocations || allocations.length === 0) {
+        return res.status(404).json({ message: 'No allocations found' });
+      }
+      const symbols = allocations.map(a => a.symbol);
+      console.log('Fetching data for symbols:', symbols);
+
+      // 拉每一檔區間內的歷史股價
+      const symbolDataArray = await Promise.all(symbols.map(async (symbol) => {
+        return yahooFinance.chart(symbol, { period1, period2, interval });
+      }));
+
+      console.log('Fetched symbol data:', symbolDataArray);
+      
+      const data = {};
+      symbols.forEach((symbol, index) => {
+        data[symbol] = symbolDataArray[index].quotes.map(quote => ({
+          date: quote.date.toISOString().split('T')[0],
+          close: quote.close
+        }));
+      });
+
+      console.log('Allocation chart data:', data);
+
+      res.json(
+        data // 回傳格式為 { AAPL: [{ date: '2025-01-08', close: 123.45 }, ...], MSFT: [...], ... }
       );
     } catch (error) {
       res.status(500).json({ error: error.message });
