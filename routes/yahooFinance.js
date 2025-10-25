@@ -127,7 +127,7 @@ router.get('/allocation-chart', async (req, res) => {
       symbols.forEach((symbol, index) => {
         data[symbol] = symbolDataArray[index].quotes.map(quote => ({
           date: quote.date.toISOString().split('T')[0],
-          close: quote.close
+          close: quote.adjclose
         }));
       });
 
