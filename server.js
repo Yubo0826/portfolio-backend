@@ -11,7 +11,20 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(cors({ origin: '*' }));
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://your-production-frontend-domain.com'
+];
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+  })
+);
+
 app.use(express.json()); //自動解析 Content-Type: application/json 的請求 body
 
 // 將 Prisma 傳給每個 route（如果需要）
