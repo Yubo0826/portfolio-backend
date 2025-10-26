@@ -11,7 +11,7 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(cors()); // 允許所有來源 CORS
+app.use(cors({ origin: '*' }));
 app.use(express.json()); //自動解析 Content-Type: application/json 的請求 body
 
 // 將 Prisma 傳給每個 route（如果需要）
