@@ -11,15 +11,11 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// 全域 CORS 設定（放最上方，處理所有 route）
 app.use(cors({
-  origin: '*', // 或改成 'http://localhost:5173' / 你的正式網域
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
-// 處理 OPTIONS 預檢請求
-app.options('*', cors());
 
 app.use(express.json()); //自動解析 Content-Type: application/json 的請求 body
 
