@@ -11,6 +11,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+app.options('*', cors());
+
 const allowedOrigins = [
   'http://localhost:5173',
   'https://your-production-frontend-domain.com'
