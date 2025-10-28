@@ -31,6 +31,7 @@ model users {
   uid          String         @unique @db.VarChar(255)
   email        String         @unique @db.VarChar(255)
   display_name String?        @db.VarChar(255)
+  drift_threshold Decimal? @default(0.05) @db.Decimal(5, 4)  // 偏差容忍值 (預設 5%)
   created_at   DateTime?      @default(now()) @db.Timestamp(6)
   holdings     holdings[]
   transactions transactions[]

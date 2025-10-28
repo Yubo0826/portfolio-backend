@@ -45,5 +45,5 @@ app.use('/api/yahoo', yahooFinanceRoute);
 app.use('/api/dividends', dividendsRoute);
 
 app.listen(PORT, () => {
-  console.log(`🚀 Tiingo Proxy Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running 🚀`);
 });
