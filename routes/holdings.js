@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
     const holdings = await prisma.holdings.findMany({
       where: { uid, portfolio_id: Number(portfolio_id) },
     });
-    console.log('Fetched holdings:', holdings);
+    // console.log('Fetched holdings:', holdings);
     res.json(holdings);
   } catch (error) {
     console.error('Error fetching holdings:', error);

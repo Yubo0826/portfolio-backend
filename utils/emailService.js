@@ -21,6 +21,7 @@ const transporter = nodemailer.createTransport({
  */
 export async function sendEmail(to, subject, html) {
   try {
+    console.log('Sending email to:', process.env.EMAIL_HOST)
     const info = await transporter.sendMail({
       from: `"Portfolio Alert" <${process.env.EMAIL_USER}>`,
       to,

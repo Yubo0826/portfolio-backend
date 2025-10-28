@@ -9,7 +9,7 @@ cron.schedule('0 8 * * *', async () => {
   console.log('⏰ [CRON] 開始檢查投資組合偏差...');
 
   try {
-    const users = await prisma.user.findMany({
+    const users = await prisma.users.findMany({
       include: { portfolio: true },
     });
 

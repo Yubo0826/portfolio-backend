@@ -72,9 +72,9 @@ router.get('/holdings-chart', async (req, res) => {
 
       // 處理每個股票的 quotes 陣列
       symbolDataArray.forEach(stock => {
-        console.log('Processing stock:', stock);
+        // console.log('Processing stock:', stock);
         stock.quotes.forEach(quote => {
-          console.log('Processing quote:', quote.date, 'Close:', quote.close);
+          // console.log('Processing quote:', quote.date, 'Close:', quote.close);
           const date = quote.date.toISOString().split('T')[0]; // 取 '2025-01-08' 的格式
           if (!mergedDataMap[date]) {
             mergedDataMap[date] = 0;
@@ -88,8 +88,6 @@ router.get('/holdings-chart', async (req, res) => {
         date,
         close: parseFloat(close.toFixed(2)) // 保留小數點兩位
       }));
-
-      console.log(mergedDataArray);
 
       res.json(
         mergedDataArray // 回傳格式為 [{ date: '2025-01-08', close: 123.45 }, ...]
@@ -114,14 +112,14 @@ router.get('/allocation-chart', async (req, res) => {
         return res.status(404).json({ message: 'No allocations found' });
       }
       const symbols = allocations.map(a => a.symbol);
-      console.log('Fetching data for symbols:', symbols);
+      // console.log('Fetching data for symbols:', symbols);
 
       // 拉每一檔區間內的歷史股價
       const symbolDataArray = await Promise.all(symbols.map(async (symbol) => {
         return yahooFinance.chart(symbol, { period1, period2, interval });
       }));
 
-      console.log('Fetched symbol data:', symbolDataArray);
+      // console.log('Fetched symbol data:', symbolDataArray);
       
       const data = {};
       symbols.forEach((symbol, index) => {
@@ -131,7 +129,7 @@ router.get('/allocation-chart', async (req, res) => {
         }));
       });
 
-      console.log('Allocation chart data:', data);
+      // console.log('Allocation chart data:', data);
 
       res.json(
         data // 回傳格式為 { AAPL: [{ date: '2025-01-08', close: 123.45 }, ...], MSFT: [...], ... }
