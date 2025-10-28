@@ -66,9 +66,27 @@ export async function checkAllPortfolios() {
     const drifts = await checkPortfolioDrift(p.id, p.uid);
     if (drifts.length > 0) {
       console.log(`⚠️ Portfolio: ${p.name} (uid: ${p.uid}) 有偏差:`, drifts);
-      // TODO: 實作通知 (例如發送 Email、Line、或寫入 alert table)
+      // 組 Email 內容
+      const html = `
+          <h2>投資組合偏差警示 - ${p.name}</h2>
+          <p>您的投資組合持股比例與設定值偏差超出 <b>${(p.users.drift_threshold * 100).toFixed(1)}%</b></p>
+          <table border="1" cellspacing="0" cellpadding="5">
+            <tr><th>標的</th><th>實際配置</th><th>目標配置</th><th>偏差</th></tr>
+            ${drifts.map(d => `
+              <tr>
+                <td>${d.symbol}</td>
+                <td>${d.actual}</td>
+                <td>${d.target}</td>
+                <td>${d.deviation}</td>
+              </tr>`).join('')}
+          </table>
+          <p style="margin-top:10px;">請考慮進行再平衡或調整持倉。</p>
+        `
+
+        // 寄信
+        await sendEmail(p.users.email, `【Stockbar】投資組合 ${p.name} 偏差超出閾值通知`, html);
     }
   }
 
-  console.log('✅ 所有投資組合檢查完成');
+  console.log('所有投資組合檢查完成');
 }
