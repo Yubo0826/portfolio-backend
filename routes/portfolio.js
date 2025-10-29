@@ -10,6 +10,11 @@ router.get('/', async (req, res) => {
     const portfolios = await prisma.portfolios.findMany({
       where: { uid },
     });
+
+    portfolios.forEach(p => {
+      p.drift_threshold = p.drift_threshold ? Number(p.drift_threshold) * 100 : null;
+    });
+
     res.json({
       portfolios,
     });
@@ -25,7 +30,9 @@ router.post('/', async (req, res) => {
     uid,
     name,
     description,
-   } = req.body;
+    drift_threshold,
+    enable_email_alert
+  } = req.body;
 
   if (!uid || !name) {
     return res.status(400).json({ message: 'Missing required fields' });
@@ -37,8 +44,12 @@ router.post('/', async (req, res) => {
         uid,
         name,
         description,
+        drift_threshold: drift_threshold ? Number(drift_threshold) / 100 : null,
+        enable_email_alert
       },
     });
+
+    newPortfolio.drift_threshold = newPortfolio.drift_threshold ? Number(newPortfolio.drift_threshold) * 100 : null;
     
     res.status(200).json({
       message: 'Portfolio saved successfully',
@@ -56,7 +67,9 @@ router.put('/', async (req, res) => {
     id,
     name,
     description,
-   } = req.body;
+    drift_threshold,
+    enable_email_alert
+  } = req.body;
 
   if (!id || !name) {
     return res.status(400).json({ message: 'Missing required fields' });
@@ -68,9 +81,13 @@ router.put('/', async (req, res) => {
       data: {
         name,
         description,
+        drift_threshold: drift_threshold ? Number(drift_threshold) / 100 : null,
+        enable_email_alert
       },
     });
-    
+
+    updatedPortfolio.drift_threshold = updatedPortfolio.drift_threshold ? Number(updatedPortfolio.drift_threshold) * 100 : null;
+
     res.status(200).json({
       message: 'Portfolio updated successfully',
       portfolio: updatedPortfolio,

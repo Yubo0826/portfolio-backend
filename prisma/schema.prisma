@@ -31,7 +31,6 @@ model users {
   uid          String         @unique @db.VarChar(255)
   email        String         @unique @db.VarChar(255)
   display_name String?        @db.VarChar(255)
-  drift_threshold Decimal? @default(0.05) @db.Decimal(5, 4)  // 偏差容忍值 (預設 5%)
   created_at   DateTime?      @default(now()) @db.Timestamp(6)
   holdings     holdings[]
   transactions transactions[]
@@ -58,18 +57,22 @@ model holdings {
   @@unique([uid, symbol, portfolio_id], name: "uid_symbol_portfolio")
 }
 
+
 model portfolios {
-  id          Int       @id @default(autoincrement())
-  name        String
-  description String?
-  uid         String     @db.VarChar(255)
-  created_at  DateTime?  @default(now()) @db.Timestamp(6)
-  users       users      @relation(fields: [uid], references: [uid], onDelete: Cascade)
-  holdings    holdings[]
-  transactions transactions[]
-  allocation allocation[]
-  dividends   dividends[]
+  id              Int          @id @default(autoincrement())
+  name            String
+  description     String?
+  uid             String       @db.VarChar(255)
+  created_at      DateTime?    @default(now()) @db.Timestamp(6)
+  drift_threshold Decimal?     @default(0.05) @db.Decimal(5, 4) // 偏移容忍值 (預設 5%)
+  enable_email_alert Boolean   @default(true)                    // 是否啟用 Email 通知 (當投資組合偏移超出容忍值時)
+  users           users        @relation(fields: [uid], references: [uid], onDelete: Cascade)
+  holdings        holdings[]
+  transactions    transactions[]
+  allocation      allocation[]
+  dividends       dividends[]
 }
+
 
 model allocation {
   id         Int     @id @default(autoincrement())

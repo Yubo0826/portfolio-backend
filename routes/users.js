@@ -1,6 +1,6 @@
 import express from 'express';
 const router = express.Router();
-import { checkPortfolioDrift } from '../services/portfolioService.js';
+import { checkAllPortfolios } from '../services/portfolioDriftService.js';
 
 // 建立新使用者
 router.post('/', async (req, res) => {
@@ -121,48 +121,9 @@ router.post('/send-test-email', async (req, res) => {
 
 // 寄投資組合偏差警示信測試
 router.post('/send-drift-alert-test', async (req, res) => {
-  const { sendEmail } = await import('../utils/emailService.js');
-  const { uid } = req.body;
-
-  if (!uid) {
-    return res.status(400).json({ message: 'Missing required fields' });
-  }
-
   try {
-    const prisma = req.prisma;
-    const user = await prisma.users.findUnique({
-      where: { uid },
-    });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    const portfolio = await prisma.portfolios.findFirst({
-      where: { uid },
-    });
-    if (!portfolio) {
-      return res.status(404).json({ message: 'Portfolio not found' });
-    }
-    const drifts = await checkPortfolioDrift(user);
-    if (drifts.length === 0) {
-      return res.status(200).json({ message: 'No drift detected, no email sent' });
-    }
-    const html = `
-      <h2>投資組合偏差警示 - ${portfolio.name}</h2>
-      <p>您的投資組合持股比例與設定值偏差超出閾值</p>
-      <table border="1" cellspacing="0" cellpadding="5">
-        <tr><th>標的</th><th>實際配置</th><th>目標配置</th><th>偏差</th></tr>
-        ${drifts.map(d => `
-          <tr>
-            <td>${d.symbol}</td>
-            <td>${d.actual}</td>
-            <td>${d.target}</td>
-            <td>${d.deviation}</td>
-          </tr>`).join('')}
-      </table>
-      <p style="margin-top:10px;">請考慮進行再平衡或調整持倉。</p>
-    `;
-
-    await sendEmail(user.email, `【Stockbar】投資組合 ${portfolio.name} 偏差超出閾值通知（測試信）`, html);
+    console.log('Sending drift alert test email...');
+    await checkAllPortfolios();
     res.status(200).json({ message: 'Drift alert test email sent successfully' });
   } catch (error) {
     console.error('Error sending drift alert test email:', error);
