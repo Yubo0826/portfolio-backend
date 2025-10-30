@@ -1,6 +1,8 @@
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+import { sendEmail } from '../utils/emailService.js';
+
 /**
  * 計算單一投資組合的實際配置比例
  */
@@ -69,14 +71,13 @@ export async function checkAllPortfolios() {
     const driftThreshold = p.drift_threshold || 0.05
     const drifts = await checkPortfolioDrift(p.id, p.uid, driftThreshold)
 
-    if (drifts.length > 0) {
+    console.log(`⚠️ ${p.users.display_name}  投資組合 ${p.name} 偏差 ${drifts.length} 項 , email alert: ${p.enable_email_alert}`);
+    if (drifts.length > 0 && p.enable_email_alert) {
       console.log(`⚠️ Portfolio [${p.name}] 偏差超出 ${driftThreshold * 100}%`, drifts)
 
       // 檢查是否啟用通知
-      if (p.enable_email_alert && p.users.email) {
-        const html = buildDriftEmailTemplate(p, drifts, driftThreshold)
-        await sendEmail(p.users.email, `⚠️ 投資組合 ${p.name} 偏差超出設定值`, html)
-      }
+      const html = buildDriftEmailTemplate(p, drifts, driftThreshold)
+      await sendEmail(p.users.email, `《通知》投資組合 ${p.name} 偏差超出設定值`, html)
     }
   }
 
@@ -85,9 +86,9 @@ export async function checkAllPortfolios() {
 
 
 
-const buildDriftEmailTemplate = (portfolioName, drifts, driftThreshold) => {
+const buildDriftEmailTemplate = (portfolio, drifts, driftThreshold) => {
   return `
-    <h2>投資組合偏差警示 - ${portfolioName}</h2>
+    <h2>投資組合 ${portfolio.name} 偏差警示</h2>
     <p>您的投資組合持股比例與設定值偏差超出 <b>${(driftThreshold * 100).toFixed(1)}%</b></p>
     <table border="1" cellspacing="0" cellpadding="5">
       <tr><th>標的</th><th>實際配置</th><th>目標配置</th><th>偏差</th></tr>

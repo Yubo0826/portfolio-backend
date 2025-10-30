@@ -4,8 +4,8 @@ import { checkPortfolioDrift } from '../services/portfolioService.js';
 
 const prisma = new PrismaClient();
 
-// 每天早上 8:00 執行
-cron.schedule('0 8 * * *', async () => {
+// 每天 0:00 執行
+cron.schedule('0 0 * * *', async () => {
   console.log('⏰ [CRON] 開始檢查投資組合偏差...');
 
   try {
