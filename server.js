@@ -9,7 +9,6 @@ const prisma = new PrismaClient();
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
 
 app.use(cors({
   origin: ['https://stockbar.up.railway.app'], // 前端網址
@@ -48,6 +47,9 @@ app.use('/api/portfolio', portfolioRoute);
 app.use('/api/allocation', allocationRoute);
 app.use('/api/yahoo', yahooFinanceRoute);
 app.use('/api/dividends', dividendsRoute);
+
+
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`
