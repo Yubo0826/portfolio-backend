@@ -25,7 +25,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// import './jobs/dailyPortfolioCheck.js' // 每日投資組合偏差檢查服務
+import './jobs/dailyPortfolioCheck.js' // 每日投資組合偏差檢查服務
 
 import transactionsRoute from './routes/transactions.js';
 import userRoute from './routes/users.js';

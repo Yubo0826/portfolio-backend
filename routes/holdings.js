@@ -43,7 +43,6 @@ router.post('/refresh-prices', async (req, res) => {
     // 更新每個 holdings 的價格
     const updatedHoldings = await Promise.all(
       holdings.map(async (holding) => {
-        // 假設這裡有一個函數可以獲取最新價格
         const latestPrice = await getLatestPrice(holding.symbol);
         return prisma.holdings.update({
           where: { id: holding.id },
