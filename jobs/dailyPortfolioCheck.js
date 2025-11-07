@@ -5,7 +5,17 @@ import { checkPortfolioDrift } from '../services/portfolioService.js';
 const prisma = new PrismaClient();
 
 
-// 每天 0:00 執行
+/*
+  每日排程任務：
+  每天 0:00：
+
+  抓出所有 user + portfolio
+
+  更新所有 holdings 的價格
+
+  再執行 投資組合偏差檢查
+*/
+
 cron.schedule('0 0 * * *', async () => {
   console.log('[CRON] 開始每日 holdings 更新與投資組合檢查...');
 

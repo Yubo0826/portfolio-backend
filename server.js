@@ -12,7 +12,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors({
-  origin: '*',
+  origin: ['https://stockbar.up.railway.app'], // 前端網址
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
