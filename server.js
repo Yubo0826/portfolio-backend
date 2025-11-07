@@ -17,6 +17,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// 處理所有預檢請求
+app.options('*', cors());
+
 app.use(express.json()); //自動解析 Content-Type: application/json 的請求 body
 
 // 將 Prisma 傳給每個 route（如果需要）
