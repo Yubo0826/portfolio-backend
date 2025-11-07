@@ -11,13 +11,12 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: ['https://stockbar.up.railway.app'], // 前端網址
+  origin: ['https://stockbar.up.railway.app'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  preflightContinue: false, // 自動處理 OPTIONS
 }));
-
-// 處理所有預檢請求
-app.options('*', cors());
 
 app.use(express.json()); //自動解析 Content-Type: application/json 的請求 body
 
