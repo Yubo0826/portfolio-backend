@@ -103,8 +103,6 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
       });
       const dividends = result?.events?.dividends ?? [];
 
-      console.log(dividends);
-
       for (const dividend of dividends) {
         const dividendDate = new Date(dividend.date * 1000); // 配息日期
         
@@ -144,7 +142,10 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
     }
   }
 
-  console.log('配息同步完成 ✅');
+  console.log('配息同步完成');
 }
 
-export default router;
+export {
+  router as default,
+  syncDividendsForUserHoldings,
+};

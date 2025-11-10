@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { PrismaClient } from '../generated/prisma/index.js';
 import { checkPortfolioDrift } from '../services/portfolioService.js';
+import { syncDividendsForUserHoldings } from '../routes/dividends.js';
 
 const prisma = new PrismaClient();
 
@@ -11,12 +12,12 @@ const prisma = new PrismaClient();
 
   抓出所有 user + portfolio
 
-  更新所有 holdings 的價格
+  更新所有 holdings 的價格 & 配息紀錄
 
   再執行 投資組合偏差檢查
 */
 
-cron.schedule('0 0 * * *', async () => {
+const task = cron.schedule('18 0 * * *', async () => {
   console.log('[CRON] 開始每日 holdings 更新與投資組合檢查...');
 
   try {
@@ -25,16 +26,17 @@ cron.schedule('0 0 * * *', async () => {
     });
 
     for (const user of users) {
-      // 更新該使用者所有 portfolio 的 holdings 價格
+      // 更新該使用者所有 portfolio 的 holdings 價格 & 配息紀錄
       for (const portfolio of user.portfolio) {
         await refreshUserHoldings(user.uid, portfolio.id);
+        await syncDividendsForUserHoldings(user.uid, portfolio.id);
       }
 
       // 檢查投資組合偏差
       await checkPortfolioDrift(user);
     }
 
-    console.log('每日 holdings 更新與 portfolio 檢查完成。');
+    console.log('每日任務檢查完成。');
   } catch (error) {
     console.error('❌ 每日任務執行失敗:', error);
   }
@@ -79,3 +81,5 @@ const refreshUserHoldings = async (uid, portfolio_id) => {
 
   console.log(`使用者 ${uid} 的 holdings 更新完成，共 ${updatedHoldings.length} 筆。`);
 };
+
+export default task;

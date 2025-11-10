@@ -10,8 +10,17 @@ dotenv.config();
 
 const app = express();
 
+const allowedOrigins = [
+  'https://stockbar.up.railway.app'
+];
+
+// 開發環境允許本地端存取，/env 裡設定 NODE_ENV="development"
+if (process.env.NODE_ENV === 'development') {
+  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
+}
+
 app.use(cors({
-  origin: ['https://stockbar.up.railway.app'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -26,7 +35,9 @@ app.use((req, res, next) => {
   next();
 });
 
-import './jobs/dailyPortfolioCheck.js' // 每日投資組合偏差檢查服務
+import task from './jobs/dailyPortfolioCheck.js' // 每日投資組合偏差檢查服務
+
+task.start(); // 啟動每日任務
 
 import transactionsRoute from './routes/transactions.js';
 import userRoute from './routes/users.js';
