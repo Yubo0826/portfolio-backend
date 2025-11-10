@@ -26,9 +26,7 @@ const task = cron.schedule('0 0 * * *', async () => {
       include: { portfolios: true },
     });
 
-    console.log(users)
     for (const user of users) {
-      console.log(user);
       for (const portfolio of user.portfolios) {
         // 更新holdings價格
         await refreshUserHoldings(user.uid, portfolio.id);

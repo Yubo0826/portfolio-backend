@@ -61,7 +61,7 @@ export async function checkPortfolioDrift(portfolioId, uid, driftThreshold = 0.0
  * 主程式：檢查所有使用者
  */
 export async function checkAllPortfolios() {
-  console.log('🚀 開始每日投資組合偏差檢查...')
+  console.log('開始每日投資組合偏差檢查...')
 
   const portfolios = await prisma.portfolios.findMany({
     include: { users: true },
@@ -81,7 +81,7 @@ export async function checkAllPortfolios() {
     }
   }
 
-  console.log('✅ 所有投資組合檢查完成')
+  console.log('所有投資組合檢查完成')
 }
 
 

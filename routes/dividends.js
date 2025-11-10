@@ -83,8 +83,6 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
     }
   }
 
-  console.log(symbolGroups);
-
   const now = new Date();
 
   for (const symbol of Object.keys(symbolGroups)) {
