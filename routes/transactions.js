@@ -386,7 +386,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
     },
   });
 
-  if (!existing && transactionType === 'sell') return { message: 'No existing holdings found' };
+  if (!existing && transactionType === 'sell') return { message: `No existing holdings found for symbol ${symbol}` };
 
   if (transactionType === 'sell') { 
     const leaveShares = Number(existing.total_shares) - Number(shares);
