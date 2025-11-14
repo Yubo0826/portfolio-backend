@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { PrismaClient } from '../generated/prisma/index.js';
-import { checkPortfolioDrift } from '../services/portfolioService.js';
+import { checkAllPortfolios } from '../services/portfolioService.js';
 import { syncDividendsForUserHoldings } from '../routes/dividends.js';
 import yahooFinance from 'yahoo-finance2';
 
@@ -18,7 +18,7 @@ const prisma = new PrismaClient();
   再執行 投資組合偏差檢查
 */
 
-const task = cron.schedule('0 0 * * *', async () => {
+const task = cron.schedule('30 18 * * *', async () => {
   console.log('[CRON] 開始每日 holdings 更新與投資組合檢查...');
 
   try {
@@ -34,9 +34,11 @@ const task = cron.schedule('0 0 * * *', async () => {
         // 同步配息紀錄
         await syncDividendsForUserHoldings(user.uid, portfolio.id);
         // 檢查投資組合偏差
-        await checkPortfolioDrift(portfolio.id, user.uid, user.drift_threshold);
+        // await checkPortfolioDrift(portfolio.id, user.uid, user.drift_threshold);
       }
     }
+
+    await checkAllPortfolios();
 
     console.log('每日任務檢查完成。');
   } catch (error) {
