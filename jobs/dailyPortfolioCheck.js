@@ -18,7 +18,7 @@ const prisma = new PrismaClient();
   再執行 投資組合偏差檢查
 */
 
-const task = cron.schedule('30 18 * * *', async () => {
+const task = cron.schedule('30 15 * * *', async () => {
   console.log('[CRON] 開始每日 holdings 更新與投資組合檢查...');
 
   try {
