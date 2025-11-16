@@ -44,7 +44,7 @@ router.get('/chart', async (req, res) => {
   }
 });
 
-// 取得user holdings的歷史總價
+// 拿 user holdings 的歷史股價（依交易紀錄計算持股價值）for Dashboard 每日總資產成長曲線 Chart
 router.get('/holdings-chart', async (req, res) => {
   const { uid, portfolio_id, interval = '1d' } = req.query;
   let { period1, period2 } = req.query;
