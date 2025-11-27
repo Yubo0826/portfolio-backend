@@ -5,6 +5,8 @@ import yahooFinance from 'yahoo-finance2';
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+import { createDividendCashFlows } from './cashFlows.js';
+
 
 router.get('/', async (req, res) => {
   try {
@@ -28,7 +30,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/sync', async (req, res) => {
-    const { uid, portfolio_id } = req.body;
+    const { uid, portfolio_id, cash_account_id } = req.body;
 
     if (!uid || !portfolio_id) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -37,12 +39,22 @@ router.post('/sync', async (req, res) => {
     try {
       // 同步單一股票的配息紀錄
       await syncDividendsForUserHoldings(uid, portfolio_id);
+      
+      // 自動建立現金流記錄
+      try {
+        await createDividendCashFlows(uid, portfolio_id, cash_account_id);
+      } catch (error) {
+        console.error('Error creating dividend cash flows:', error);
+        // 不中斷股利同步流程，僅記錄錯誤
+      }
+      
       const dividends = await prisma.dividends.findMany({
-      where: {
-        uid,
-        portfolio_id: Number(portfolio_id),
-      },
-    });
+        where: {
+          uid,
+          portfolio_id: Number(portfolio_id),
+        },
+      });
+      
       res.json({ message: 'Dividends synced successfully', dividends });
     } catch (error) {
       console.error('Error syncing dividends:', error);

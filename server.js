@@ -47,6 +47,8 @@ import portfolioRoute from './routes/portfolio.js';
 import allocationRoute from './routes/allocation.js';
 import yahooFinanceRoute from './routes/yahooFinance.js';
 import dividendsRoute from './routes/dividends.js';
+import cashAccountsRoute from './routes/cashAccounts.js';
+import cashFlowsRoute from './routes/cashFlows.js';
 
 // 路由掛載
 app.use('/api/transactions', transactionsRoute);
@@ -57,6 +59,8 @@ app.use('/api/portfolio', portfolioRoute);
 app.use('/api/allocation', allocationRoute);
 app.use('/api/yahoo', yahooFinanceRoute);
 app.use('/api/dividends', dividendsRoute);
+app.use('/api/cash-accounts', cashAccountsRoute);
+app.use('/api/cash-flows', cashFlowsRoute);
 
 
 const PORT = process.env.PORT || 3000;

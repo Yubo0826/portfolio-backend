@@ -4,6 +4,8 @@ const router = express.Router();
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+import { createTransactionCashFlow } from './cashFlows.js';
+
 router.get('/', async (req, res) => {
   try {
     const { uid, portfolio_id } = req.query;
@@ -47,6 +49,7 @@ router.post('/', async (req, res) => {
       fee,
       transaction_type,
       transaction_date,
+      cash_account_id,
     } = req.body;
 
     if (!uid || !symbol || !shares || !price || !transaction_type || !portfolio_id) {
@@ -61,7 +64,7 @@ router.post('/', async (req, res) => {
     }
 
     // 新增交易紀錄
-    await prisma.transactions.create({
+    const newTransaction = await prisma.transactions.create({
       data: {
         users: {connect: { uid } }, // 連接到使用者,
         portfolios: { connect: { id: Number(portfolio_id) } },
@@ -73,8 +76,19 @@ router.post('/', async (req, res) => {
         fee,
         transaction_type,
         transaction_date: transaction_date ? new Date(transaction_date) : undefined,
+        cash_account_id: cash_account_id ? Number(cash_account_id) : null,
       },
     });
+
+    // 如果有指定現金帳戶，自動建立現金流記錄
+    if (cash_account_id) {
+      try {
+        await createTransactionCashFlow(newTransaction, transaction_type);
+      } catch (error) {
+        console.error('Error creating cash flow:', error);
+        // 不中斷交易建立流程，僅記錄錯誤
+      }
+    }
 
     // 回傳新的所有交易紀錄
     const transactions = await prisma.transactions.findMany({
@@ -285,19 +299,47 @@ router.delete('/', async (req, res) => {
       return res.status(404).json({ message: 'No transactions found to delete' });
     }
 
-    // Step 2: 建立受影響的 holdings 清單
+    // Step 2: 刪除相關的現金流記錄並更新帳戶餘額
+    for (const tx of transactionsToDelete) {
+      if (tx.cash_account_id) {
+        const relatedCashFlow = await prisma.cash_flows.findFirst({
+          where: {
+            related_transaction_id: tx.id,
+          },
+        });
+
+        if (relatedCashFlow) {
+          // 扣回現金流金額
+          await prisma.cash_accounts.update({
+            where: { id: tx.cash_account_id },
+            data: {
+              balance: {
+                decrement: Number(relatedCashFlow.amount),
+              },
+            },
+          });
+
+          // 刪除現金流記錄
+          await prisma.cash_flows.delete({
+            where: { id: relatedCashFlow.id },
+          });
+        }
+      }
+    }
+
+    // Step 3: 建立受影響的 holdings 清單
     const affectedHoldingsSet = new Set(
       transactionsToDelete.map(tx => tx.symbol)
     );
 
-    // Step 3: 刪除交易紀錄
+    // Step 4: 刪除交易紀錄
     await prisma.transactions.deleteMany({
       where: {
         id: { in: ids.map(Number) },
       },
     });
 
-     // Step 4: 重新計算每一筆受影響的 holdings
+     // Step 5: 重新計算每一筆受影響的 holdings
     for (const symbol of affectedHoldingsSet) {
 
       // 找出剩下的該股票所有交易

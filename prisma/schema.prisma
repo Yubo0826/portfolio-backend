@@ -10,31 +10,68 @@ datasource db {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model transactions {
-  id               Int       @id @default(autoincrement())
-  uid              String?   @db.VarChar(255)
+  id               Int            @id @default(autoincrement())
+  uid              String?        @db.VarChar(255)
   portfolio_id     Int
-  symbol           String    @db.VarChar(10)
-  shares           Decimal   @db.Decimal(10, 2)
-  price            Decimal   @db.Decimal(10, 2)
-  transaction_type String    @db.VarChar(10)
-  transaction_date DateTime? @default(dbgenerated("CURRENT_DATE")) @db.Date
-  created_at       DateTime? @default(now()) @db.Timestamp(6)
-  name             String?   @db.VarChar(255)
-  asset_type       String?   @db.VarChar(255)
-  fee              Decimal?  @db.Decimal(10, 2)
-  users            users?    @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction, map: "transactions_user_id_fkey")
-  portfolios       portfolios @relation(fields: [portfolio_id], references: [id], onDelete: Cascade)
+  symbol           String         @db.VarChar(10)
+  shares           Decimal        @db.Decimal(10, 2)
+  price            Decimal        @db.Decimal(10, 2)
+  transaction_type String         @db.VarChar(10)
+  transaction_date DateTime?      @default(dbgenerated("CURRENT_DATE")) @db.Date
+  cash_account_id  Int?
+  created_at       DateTime?      @default(now()) @db.Timestamp(6)
+  name             String?        @db.VarChar(255)
+  asset_type       String?        @db.VarChar(255)
+  fee              Decimal?       @db.Decimal(10, 2)
+  users            users?         @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction, map: "transactions_user_id_fkey")
+  portfolios       portfolios     @relation(fields: [portfolio_id], references: [id], onDelete: Cascade)
+  cash_accounts    cash_accounts? @relation(fields: [cash_account_id], references: [id], onDelete: SetNull)
 }
 
 model users {
+  id            Int             @id @default(autoincrement())
+  uid           String          @unique @db.VarChar(255)
+  email         String          @unique @db.VarChar(255)
+  display_name  String?         @db.VarChar(255)
+  created_at    DateTime?       @default(now()) @db.Timestamp(6)
+  holdings      holdings[]
+  transactions  transactions[]
+  portfolios    portfolios[]
+  cash_accounts cash_accounts[]
+  cash_flows    cash_flows[]
+}
+
+model cash_accounts {
   id           Int            @id @default(autoincrement())
-  uid          String         @unique @db.VarChar(255)
-  email        String         @unique @db.VarChar(255)
-  display_name String?        @db.VarChar(255)
-  created_at   DateTime?      @default(now()) @db.Timestamp(6)
-  holdings     holdings[]
+  uid          String         @db.VarChar(255)
+  name         String         @db.VarChar(255)
+  balance      Decimal        @db.Decimal(15, 2)
+  currency     String         @default("USD") @db.VarChar(10)
+  description  String?        @db.VarChar(255)
+  created_at   DateTime       @default(now()) @db.Timestamp(6)
+  updated_at   DateTime       @default(now()) @updatedAt @db.Timestamp(6)
+  users        users          @relation(fields: [uid], references: [uid], onDelete: Cascade)
+  cash_flows   cash_flows[]
   transactions transactions[]
-  portfolios   portfolios[]
+}
+
+model cash_flows {
+  id                     Int            @id @default(autoincrement())
+  uid                    String         @db.VarChar(255)
+  account_id             Int      
+  portfolio_id           Int?
+  related_transaction_id Int?
+  related_dividend_id    Int?
+  related_symbol         String?        @db.VarChar(10)
+  amount                 Decimal        @db.Decimal(15, 2)
+  flow_type              String         @db.VarChar(20)
+  description            String?        @db.VarChar(255)
+  date                   DateTime       @db.Date
+  created_at             DateTime       @default(now()) @db.Timestamp(6)
+  updated_at             DateTime       @default(now()) @updatedAt @db.Timestamp(6)
+  users                  users          @relation(fields: [uid], references: [uid], onDelete: Cascade)
+  cash_accounts          cash_accounts  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  portfolios             portfolios?    @relation(fields: [portfolio_id], references: [id], onDelete: Cascade)
 }
 
 model holdings {
@@ -59,18 +96,19 @@ model holdings {
 
 
 model portfolios {
-  id              Int          @id @default(autoincrement())
-  name            String
-  description     String?
-  uid             String       @db.VarChar(255)
-  created_at      DateTime?    @default(now()) @db.Timestamp(6)
-  drift_threshold Decimal?     @default(0.05) @db.Decimal(5, 4) // 偏移容忍值 (預設 5%)
-  enable_email_alert Boolean   @default(true)                    // 是否啟用 Email 通知 (當投資組合偏移超出容忍值時)
-  users           users        @relation(fields: [uid], references: [uid], onDelete: Cascade)
-  holdings        holdings[]
-  transactions    transactions[]
-  allocation      allocation[]
-  dividends       dividends[]
+  id                 Int            @id @default(autoincrement())
+  name               String
+  description        String?
+  uid                String         @db.VarChar(255)
+  created_at         DateTime?      @default(now()) @db.Timestamp(6)
+  drift_threshold    Decimal?       @default(0.05) @db.Decimal(5, 4) // 偏移容忍值 (預設 5%)
+  enable_email_alert Boolean        @default(true)                    // 是否啟用 Email 通知 (當投資組合偏移超出容忍值時)
+  users              users          @relation(fields: [uid], references: [uid], onDelete: Cascade)
+  holdings           holdings[]
+  transactions       transactions[]
+  allocation         allocation[]
+  dividends          dividends[]
+  cash_flows         cash_flows[]
 }
 
 
