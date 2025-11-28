@@ -64,26 +64,32 @@ router.post('/', async (req, res) => {
     }
 
     // 新增交易紀錄
+    const transactionData = {
+      users: { connect: { uid } }, // 連接到使用者
+      portfolios: { connect: { id: Number(portfolio_id) } },
+      symbol,
+      name,
+      asset_type,
+      shares,
+      price,
+      fee,
+      transaction_type,
+      transaction_date: transaction_date ? new Date(transaction_date) : undefined,
+    };
+
+    // 如果有指定現金帳戶，使用關聯連接
+    if (cash_account_id) {
+      transactionData.cash_accounts = { connect: { id: Number(cash_account_id) } };
+    }
+
     const newTransaction = await prisma.transactions.create({
-      data: {
-        users: {connect: { uid } }, // 連接到使用者,
-        portfolios: { connect: { id: Number(portfolio_id) } },
-        symbol,
-        name,
-        asset_type,
-        shares,
-        price,
-        fee,
-        transaction_type,
-        transaction_date: transaction_date ? new Date(transaction_date) : undefined,
-        cash_account_id: cash_account_id ? Number(cash_account_id) : null,
-      },
+      data: transactionData,
     });
 
     // 如果有指定現金帳戶，自動建立現金流記錄
     if (cash_account_id) {
       try {
-        await createTransactionCashFlow(newTransaction, transaction_type);
+        await createTransactionCashFlow(newTransaction, transaction_type, cash_account_id);
       } catch (error) {
         console.error('Error creating cash flow:', error);
         // 不中斷交易建立流程，僅記錄錯誤

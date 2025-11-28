@@ -281,19 +281,20 @@ router.get('/stats', async (req, res) => {
 });
 
 // Helper function: 自動建立交易相關的現金流
-export async function createTransactionCashFlow(transaction, transactionType) {
+export async function createTransactionCashFlow(transaction, transactionType, cashAccountId) {
   try {
-    if (!transaction.cash_account_id) {
+    if (!cashAccountId) {
       return; // 沒有指定現金帳戶，不建立現金流
     }
 
+    const accountId = Number(cashAccountId);
     const amount = Number(transaction.shares) * Number(transaction.price) + (Number(transaction.fee) || 0);
     const flowAmount = transactionType === 'buy' ? -amount : amount; // 買入為負，賣出為正
 
     const cashFlow = await prisma.cash_flows.create({
       data: {
         uid: transaction.uid,
-        account_id: transaction.cash_account_id,
+        account_id: accountId,
         portfolio_id: transaction.portfolio_id,
         related_transaction_id: transaction.id,
         related_symbol: transaction.symbol,
@@ -306,12 +307,12 @@ export async function createTransactionCashFlow(transaction, transactionType) {
 
     // 更新帳戶餘額
     const account = await prisma.cash_accounts.findUnique({
-      where: { id: transaction.cash_account_id },
+      where: { id: accountId },
     });
 
     if (account) {
       await prisma.cash_accounts.update({
-        where: { id: transaction.cash_account_id },
+        where: { id: accountId },
         data: { balance: Number(account.balance) + flowAmount },
       });
     }
