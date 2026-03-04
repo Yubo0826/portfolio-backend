@@ -2,7 +2,8 @@ import cron from 'node-cron';
 import { PrismaClient } from '../generated/prisma/index.js';
 import { checkAllPortfolios } from '../services/portfolioService.js';
 import { syncDividendsForUserHoldings } from '../routes/dividends.js';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+const yahooFinance = new YahooFinance();
 
 const prisma = new PrismaClient();
 

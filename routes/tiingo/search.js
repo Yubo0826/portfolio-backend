@@ -1,6 +1,7 @@
 import express from 'express';
 import fetch from 'node-fetch';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+const yahooFinance = new YahooFinance();
 
 const router = express.Router();
 

@@ -1,6 +1,7 @@
 import express from 'express';
 const router = express.Router();
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+const yahooFinance = new YahooFinance();
 
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
