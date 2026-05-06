@@ -301,7 +301,7 @@ router.get('/trending', async (req, res) => {
   }
 });
 
-// 推薦股票
+// 推薦股票（單一 symbol）
 router.get('/recommend', async (req, res) => {
     const { symbol } = req.query;
     console.log('Received /api/yahooFinance/recommend request:', req.query);
@@ -313,5 +313,91 @@ router.get('/recommend', async (req, res) => {
   }
 });
 
+// Portfolio Expansion Ideas：依持股推薦相似標的，依平均相似度排序
+// 用法：GET /api/yahooFinance/recommend/symbols?symbols=AAPL,MSFT,GOOG&limit=10
+router.get('/recommend/symbols', async (req, res) => {
+    const { symbols, limit = 10 } = req.query;
+    console.log('Received /api/yahooFinance/recommend/symbols request:', req.query);
+    if (!symbols) {
+      return res.status(400).json({ message: 'Missing required query param: symbols' });
+    }
+    const portfolio = symbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (portfolio.length === 0) {
+      return res.status(400).json({ message: 'symbols must contain at least one value' });
+    }
+  try {
+    const recommendations = await yahooFinance.recommendationsBySymbol(portfolio);
+
+    const allRecs = new Map();
+    recommendations.forEach(result => {
+      result.recommendedSymbols.forEach(rec => {
+        if (!portfolio.includes(rec.symbol.toUpperCase())) {
+          const existing = allRecs.get(rec.symbol) || { symbol: rec.symbol, totalScore: 0, count: 0 };
+          existing.totalScore += rec.score;
+          existing.count += 1;
+          allRecs.set(rec.symbol, existing);
+        }
+      });
+    });
+
+    const sorted = Array.from(allRecs.values())
+      .map(rec => ({ symbol: rec.symbol, avgScore: rec.totalScore / rec.count, appearsIn: rec.count }))
+      .sort((a, b) => b.avgScore - a.avgScore)
+      .slice(0, Number(limit));
+
+    res.json({ portfolio, recommendations: sorted });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+const SCREENER_PRESETS = [
+  'aggressive_small_caps',
+  'conservative_foreign_funds',
+  'day_gainers',
+  'day_losers',
+  'growth_technology_stocks',
+  'high_yield_bond',
+  'most_actives',
+  'most_shorted_stocks',
+  'portfolio_anchors',
+  'small_cap_gainers',
+  'solid_large_growth_funds',
+  'solid_midcap_growth_funds',
+  'top_mutual_funds',
+  'undervalued_growth_stocks',
+  'undervalued_large_caps',
+];
+
+// 列出所有可用的預設 Screener
+router.get('/screener/presets', (req, res) => {
+  res.json(SCREENER_PRESETS);
+});
+
+// 執行 Screener 篩選
+// 用法：GET /api/yahooFinance/screener?scrIds=day_gainers&count=10&region=US&lang=en-US
+router.get('/screener', async (req, res) => {
+  const { scrIds = 'day_gainers', count = 25, region = 'US', lang = 'en-US' } = req.query;
+  console.log('Received /api/yahooFinance/screener request:', req.query);
+
+  if (!SCREENER_PRESETS.includes(scrIds)) {
+    return res.status(400).json({
+      message: `Invalid scrIds. Must be one of: ${SCREENER_PRESETS.join(', ')}`,
+    });
+  }
+
+  try {
+    const result = await yahooFinance.screener({
+      scrIds,
+      count: Number(count),
+      region,
+      lang,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 export default router;
