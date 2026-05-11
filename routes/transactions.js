@@ -58,7 +58,7 @@ router.post('/', async (req, res) => {
     }
 
     // 以下更新 holdings 資料表
-    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, transaction_type);
+    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, currency, transaction_type);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -152,7 +152,7 @@ router.post('/bulk', async (req, res) => {
       }
 
       // 更新 holdings 資料表
-      const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, transaction_type);
+      const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, currency, transaction_type);
       if (result.message !== 'Holdings updated successfully') {
         console.log('Error updating holdings for symbol', symbol, ':', result.message);
         return res.status(400).json({ message: result.message });
@@ -251,7 +251,7 @@ router.put('/:id', async (req, res) => {
     } 
 
     // 更新 holdings 資料表
-    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, updatedShares, price, newTransactionType);
+    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, updatedShares, price, currency, newTransactionType);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -389,6 +389,7 @@ router.delete('/', async (req, res) => {
         });
       } else {
         const avgCost = Number((totalCost / totalShares).toFixed(2));
+        const holdingCurrency = remainingTxs.find((tx) => tx.transaction_type === 'buy')?.currency || remainingTxs[0]?.currency || 'USD';
 
         await prisma.holdings.update({
           where: {
@@ -397,6 +398,7 @@ router.delete('/', async (req, res) => {
           data: {
             total_shares: totalShares,
             avg_cost: avgCost,
+            currency: holdingCurrency,
             last_updated: new Date(),
           },
         });
@@ -431,7 +433,7 @@ router.delete('/', async (req, res) => {
 });
 
 
-const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares, price, transactionType) => {
+const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares, price, currency, transactionType) => {
   const existing = await prisma.holdings.findFirst({
     where: {
       uid,
@@ -468,6 +470,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
         },
         data: {
           total_shares: leaveShares,
+          currency: existing.currency || currency || 'USD',
           avg_cost: existing.avg_cost,  // 賣出時不改變平均成本
           last_updated: new Date(),
         },
@@ -494,6 +497,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
         data: {
           total_shares: totalShares,
           avg_cost: avgCost,
+          currency: currency || existing.currency || 'USD',
           last_updated: new Date(),
         },
       });
@@ -508,6 +512,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
           asset_type: assetType,
           total_shares: shares,
           avg_cost: price,  // 初始平均成本為購買價格
+          currency: currency || 'USD',
           last_updated: new Date(),
         },
       });
