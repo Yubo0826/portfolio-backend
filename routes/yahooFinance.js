@@ -8,6 +8,142 @@ const router = express.Router();
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+const RECOMMENDATION_CARD_DEFAULT_LIMIT = 5;
+const RECOMMENDATION_CARD_MAX_LIMIT = 10;
+
+const toFiniteNumber = (value) => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+};
+
+const parseRecommendationLimit = (value) => {
+  const parsed = Number.parseInt(String(value ?? RECOMMENDATION_CARD_DEFAULT_LIMIT), 10);
+  if (!Number.isFinite(parsed)) return RECOMMENDATION_CARD_DEFAULT_LIMIT;
+  return Math.min(Math.max(parsed, 1), RECOMMENDATION_CARD_MAX_LIMIT);
+};
+
+const toDateOnly = (date) => {
+  return date.toISOString().split('T')[0];
+};
+
+const normalizeCloseQuotes = (quotes = []) => {
+  return quotes
+    .map((item) => ({
+      close: toFiniteNumber(item?.close),
+      date: item?.date ? new Date(item.date) : null,
+    }))
+    .filter((item) => item.close !== null && item.date && !Number.isNaN(item.date.getTime()))
+    .sort((a, b) => a.date - b.date);
+};
+
+const calculateDailyChangeFromQuotes = (quotes = []) => {
+  const normalized = normalizeCloseQuotes(quotes);
+  if (normalized.length < 2) {
+    return {
+      regularMarketChange: null,
+      regularMarketChangePercent: null,
+      regularMarketPrice: normalized.length ? normalized[normalized.length - 1].close : null,
+    };
+  }
+
+  const previousClose = normalized[normalized.length - 2].close;
+  const latestClose = normalized[normalized.length - 1].close;
+  const change = latestClose - previousClose;
+  const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : null;
+
+  return {
+    regularMarketChange: Number(change.toFixed(2)),
+    regularMarketChangePercent: changePercent === null ? null : Number(changePercent.toFixed(2)),
+    regularMarketPrice: Number(latestClose.toFixed(2)),
+  };
+};
+
+const hasQuoteChangeFields = (quoteData) => {
+  return toFiniteNumber(quoteData?.regularMarketChange) !== null
+    && toFiniteNumber(quoteData?.regularMarketChangePercent) !== null;
+};
+
+const fetchQuoteForRecommendation = async (symbol) => {
+  try {
+    const quoteCombineData = await yahooFinance.quoteCombine(symbol, undefined, {
+      validateResult: false,
+    });
+    if (quoteCombineData && typeof quoteCombineData === 'object') {
+      return { quoteData: quoteCombineData, source: 'quoteCombine' };
+    }
+  } catch (error) {
+    console.warn(`[recommend/cards] quoteCombine failed for ${symbol}:`, error?.message || error);
+  }
+
+  try {
+    const quoteData = await yahooFinance.quote(symbol);
+    if (quoteData && typeof quoteData === 'object') {
+      return { quoteData, source: 'quote' };
+    }
+  } catch (error) {
+    console.warn(`[recommend/cards] quote failed for ${symbol}:`, error?.message || error);
+  }
+
+  return { quoteData: null, source: 'none' };
+};
+
+const buildRecommendationCard = async ({ symbol, score }) => {
+  const { quoteData, source: quoteSource } = await fetchQuoteForRecommendation(symbol);
+
+  let regularMarketPrice = toFiniteNumber(quoteData?.regularMarketPrice);
+  let regularMarketChange = toFiniteNumber(quoteData?.regularMarketChange);
+  let regularMarketChangePercent = toFiniteNumber(quoteData?.regularMarketChangePercent);
+  let growthSource = hasQuoteChangeFields(quoteData) ? quoteSource : 'none';
+
+  if (regularMarketChange === null || regularMarketChangePercent === null || regularMarketPrice === null) {
+    const period2 = toDateOnly(new Date());
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 10);
+    const period1 = toDateOnly(startDate);
+
+    try {
+      const chartData = await yahooFinance.chart(symbol, {
+        period1,
+        period2,
+        interval: '1d',
+      });
+      const fallback = calculateDailyChangeFromQuotes(chartData?.quotes || []);
+
+      if (regularMarketPrice === null && fallback.regularMarketPrice !== null) {
+        regularMarketPrice = fallback.regularMarketPrice;
+      }
+      if (regularMarketChange === null && fallback.regularMarketChange !== null) {
+        regularMarketChange = fallback.regularMarketChange;
+      }
+      if (regularMarketChangePercent === null && fallback.regularMarketChangePercent !== null) {
+        regularMarketChangePercent = fallback.regularMarketChangePercent;
+      }
+      if (fallback.regularMarketChange !== null && fallback.regularMarketChangePercent !== null) {
+        growthSource = 'chart';
+      }
+    } catch (error) {
+      console.warn(`[recommend/cards] chart fallback failed for ${symbol}:`, error?.message || error);
+    }
+  }
+
+  return {
+    symbol,
+    score: Number(Number(score).toFixed(6)),
+    longName: quoteData?.longName || '',
+    shortName: quoteData?.shortName || '',
+    name: quoteData?.longName || quoteData?.shortName || symbol,
+    regularMarketPrice,
+    regularMarketChange,
+    regularMarketChangePercent,
+    currency: quoteData?.currency || '',
+    fullExchangeName: quoteData?.fullExchangeName || '',
+    growthSource,
+    hasPartialData: regularMarketPrice === null
+      || regularMarketChange === null
+      || regularMarketChangePercent === null,
+  };
+};
+
 // 搜尋股票代碼（模糊查詢）
 router.get('/symbol', async (req, res) => {
     const { query } = req.query;
@@ -291,11 +427,52 @@ router.get('/summary', async (req, res) => {
 
 // 熱門股票
 router.get('/trending', async (req, res) => {
-    const { region = 'US' } = req.query;
-    console.log('Received /api/yahooFinance/trendingSymbols request:', req.query);
+    const { region = 'US', lang = 'en-US' } = req.query;
+    console.log('Received /api/yahooFinance/dailyGainers request:', req.query);
   try {
-    const result = await yahooFinance.trendingSymbols(region);
-    res.json(result);
+    const screenerOptions = {
+      scrIds: 'day_gainers',
+      count: 5,
+      region,
+      lang,
+    };
+
+    // Yahoo Screener schema 偶爾漂移，這裡直接以無驗證模式抓原始結果避免整包失敗。
+    const screenerResult = await yahooFinance.screener(screenerOptions, undefined, {
+      validateResult: false,
+    });
+
+    const topGainers = (Array.isArray(screenerResult?.quotes)
+      ? screenerResult.quotes
+      : screenerResult?.finance?.result?.[0]?.quotes || [])
+      .filter(item => item?.symbol)
+      .slice(0, 5);
+
+    const quoteResults = await Promise.allSettled(
+      topGainers.map(item =>
+        yahooFinance.quoteCombine(item.symbol, undefined, { validateResult: false })
+      )
+    );
+
+    const mergedQuotes = topGainers.map((item, index) => {
+      const quote = quoteResults[index]?.status === 'fulfilled'
+        ? quoteResults[index].value
+        : null;
+
+      return {
+        symbol: quote?.symbol || item.symbol,
+        longname: quote?.longName || item.longName || item.longname || item.shortName || item.shortname || '',
+        shortname: quote?.shortName || item.shortName || item.shortname || '',
+        quoteType: quote?.quoteType || item.quoteType || item.typeDisp || '',
+        assetType: item.typeDisp || item.assetType || quote?.quoteType || '',
+        exchDisp: quote?.fullExchangeName || item.fullExchangeName || item.exchDisp || item.exchange || '',
+        regularMarketPrice: quote?.regularMarketPrice ?? item.regularMarketPrice ?? null,
+        regularMarketChangePercent: quote?.regularMarketChangePercent ?? item.regularMarketChangePercent ?? null,
+        currency: quote?.currency || item.currency || '',
+      };
+    });
+
+    res.json(mergedQuotes);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -310,6 +487,72 @@ router.get('/recommend', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 推薦股票卡片（單一 symbol，聚合推薦 + quote）
+router.get('/recommend/cards', async (req, res) => {
+  const sourceSymbol = String(req.query.symbol || '').trim().toUpperCase();
+  const limit = parseRecommendationLimit(req.query.limit);
+
+  console.log('Received /api/yahooFinance/recommend/cards request:', req.query);
+
+  if (!sourceSymbol) {
+    return res.status(400).json({ message: 'Missing required query param: symbol' });
+  }
+
+  try {
+    const recommendationResult = await yahooFinance.recommendationsBySymbol(sourceSymbol);
+    const rawRecommendations = Array.isArray(recommendationResult?.recommendedSymbols)
+      ? recommendationResult.recommendedSymbols
+      : [];
+
+    const dedupeSet = new Set([sourceSymbol]);
+    const candidates = [];
+
+    rawRecommendations.forEach((item) => {
+      const recSymbol = String(item?.symbol || '').trim().toUpperCase();
+      const recScore = toFiniteNumber(item?.score);
+
+      if (!recSymbol || recScore === null || dedupeSet.has(recSymbol)) {
+        return;
+      }
+
+      dedupeSet.add(recSymbol);
+      candidates.push({ symbol: recSymbol, score: recScore });
+    });
+
+    const selected = candidates
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    const settled = await Promise.allSettled(selected.map((item) => buildRecommendationCard(item)));
+
+    const recommendations = [];
+    const warnings = [];
+
+    settled.forEach((result, index) => {
+      const currentSymbol = selected[index]?.symbol || '';
+
+      if (result.status === 'fulfilled') {
+        recommendations.push(result.value);
+        return;
+      }
+
+      warnings.push({
+        symbol: currentSymbol,
+        message: result.reason?.message || 'Failed to build recommendation card',
+      });
+    });
+
+    return res.json({
+      sourceSymbol,
+      limit,
+      recommendations,
+      warnings,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
