@@ -53,12 +53,14 @@ router.post('/', async (req, res) => {
       cash_account_id,
     } = req.body;
 
-    if (!uid || !symbol || !shares || !price || !transaction_type || !portfolio_id) {
+    const normalizedPortfolioId = Number(portfolio_id);
+
+    if (!uid || !symbol || !shares || !price || !transaction_type || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     // 以下更新 holdings 資料表
-    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, currency, transaction_type);
+    const result = await updateHoldings(uid, normalizedPortfolioId, symbol, name, asset_type, shares, price, currency, transaction_type);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -67,7 +69,7 @@ router.post('/', async (req, res) => {
     // 新增交易紀錄
     const transactionData = {
       users: { connect: { uid } }, // 連接到使用者
-      portfolios: { connect: { id: Number(portfolio_id) } },
+      portfolios: { connect: { id: normalizedPortfolioId } },
       symbol,
       name,
       asset_type,
@@ -102,13 +104,13 @@ router.post('/', async (req, res) => {
     const transactions = await prisma.transactions.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     const holdings = await prisma.holdings.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     res.status(201).json({
@@ -128,8 +130,9 @@ router.post('/bulk', async (req, res) => {
   console.log('Received bulk transaction data:', req.body);
   try {
     const { uid, portfolio_id, transactions } = req.body;
+    const normalizedPortfolioId = Number(portfolio_id);
 
-    if (!uid || !portfolio_id || !Array.isArray(transactions) || transactions.length === 0) {
+    if (!uid || !portfolio_id || !Number.isInteger(normalizedPortfolioId) || !Array.isArray(transactions) || transactions.length === 0) {
       return res.status(400).json({ message: 'Missing required fields or transactions array is empty' });
     }
 
@@ -152,7 +155,7 @@ router.post('/bulk', async (req, res) => {
       }
 
       // 更新 holdings 資料表
-      const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, shares, price, currency, transaction_type);
+      const result = await updateHoldings(uid, normalizedPortfolioId, symbol, name, asset_type, shares, price, currency, transaction_type);
       if (result.message !== 'Holdings updated successfully') {
         console.log('Error updating holdings for symbol', symbol, ':', result.message);
         return res.status(400).json({ message: result.message });
@@ -162,7 +165,7 @@ router.post('/bulk', async (req, res) => {
       await prisma.transactions.create({
         data: {
           users: { connect: { uid } }, // 連接到使用者
-          portfolios: { connect: { id: Number(portfolio_id) } },
+          portfolios: { connect: { id: normalizedPortfolioId } },
           symbol,
           name,
           asset_type,
@@ -180,13 +183,13 @@ router.post('/bulk', async (req, res) => {
     const allTransactions = await prisma.transactions.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     const holdings = await prisma.holdings.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     res.status(201).json({
@@ -217,8 +220,13 @@ router.put('/:id', async (req, res) => {
     transaction_type,
     transaction_date,
   } = req.body;
+  const normalizedPortfolioId = Number(portfolio_id);
 
   try {
+    if (!uid || !symbol || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
     // 找到舊的交易紀錄
     const oldTransaction = await prisma.transactions.findFirst({
       where: { id: Number(id) },
@@ -251,7 +259,7 @@ router.put('/:id', async (req, res) => {
     } 
 
     // 更新 holdings 資料表
-    const result = await updateHoldings(uid, portfolio_id, symbol, name, asset_type, updatedShares, price, currency, newTransactionType);
+    const result = await updateHoldings(uid, normalizedPortfolioId, symbol, name, asset_type, updatedShares, price, currency, newTransactionType);
     if (result.message !== 'Holdings updated successfully') {
       console.log('Error updating holdings:', result.message);
       return res.status(400).json({ message: result.message });
@@ -272,13 +280,13 @@ router.put('/:id', async (req, res) => {
     const transactions = await prisma.transactions.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     const holdings = await prisma.holdings.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     res.status(200).json({
@@ -294,8 +302,9 @@ router.put('/:id', async (req, res) => {
 // Delete a transaction
 router.delete('/', async (req, res) => {
   const { ids, uid, portfolio_id } = req.body; // e.g., { ids: [1, 2, 3] }
+  const normalizedPortfolioId = Number(portfolio_id);
 
-  if (!Array.isArray(ids) || ids.length === 0) {
+  if (!Array.isArray(ids) || ids.length === 0 || !uid || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
     return res.status(400).json({ message: 'Invalid or empty ids array' });
   }
 
@@ -358,7 +367,7 @@ router.delete('/', async (req, res) => {
       const remainingTxs = await prisma.transactions.findMany({
         where: {
           uid,
-          portfolio_id,
+          portfolio_id: normalizedPortfolioId,
           symbol,
         },
       });
@@ -384,7 +393,7 @@ router.delete('/', async (req, res) => {
         // 無剩餘 shares，刪除 holdings
         await prisma.holdings.delete({
           where: {
-            uid_symbol_portfolio: { uid, symbol, portfolio_id },
+            uid_symbol_portfolio: { uid, symbol, portfolio_id: normalizedPortfolioId },
           },
         });
       } else {
@@ -393,7 +402,7 @@ router.delete('/', async (req, res) => {
 
         await prisma.holdings.update({
           where: {
-            uid_symbol_portfolio: { uid, symbol, portfolio_id },
+            uid_symbol_portfolio: { uid, symbol, portfolio_id: normalizedPortfolioId },
           },
           data: {
             total_shares: totalShares,
@@ -411,13 +420,13 @@ router.delete('/', async (req, res) => {
     const transactions = await prisma.transactions.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
     const holdings = await prisma.holdings.findMany({
       where: { 
         uid, 
-        portfolio_id: Number(portfolio_id)
+        portfolio_id: normalizedPortfolioId
        },
     });
 
@@ -434,10 +443,15 @@ router.delete('/', async (req, res) => {
 
 
 const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares, price, currency, transactionType) => {
+  const normalizedPortfolioId = Number(portfolioId);
+  if (!Number.isInteger(normalizedPortfolioId)) {
+    return { message: 'Invalid portfolio id' };
+  }
+
   const existing = await prisma.holdings.findFirst({
     where: {
       uid,
-      portfolio_id: portfolioId,
+      portfolio_id: normalizedPortfolioId,
       symbol,
     },
   });
@@ -452,7 +466,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
         where: {
           uid_symbol_portfolio: {
             uid,
-            portfolio_id: portfolioId,
+            portfolio_id: normalizedPortfolioId,
             symbol,
           },
         },
@@ -464,7 +478,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
         where: {
           uid_symbol_portfolio: {
             uid,
-            portfolio_id: portfolioId,
+            portfolio_id: normalizedPortfolioId,
             symbol,
           },
         },
@@ -506,7 +520,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
       await prisma.holdings.create({
         data: {
           users: { connect: { uid } }, // 關聯到 users.uid
-          portfolios: { connect: { id: Number(portfolioId) } }, // 關聯到 portfolios.id
+          portfolios: { connect: { id: normalizedPortfolioId } }, // 關聯到 portfolios.id
           symbol,
           name,
           asset_type: assetType,
