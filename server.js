@@ -16,7 +16,9 @@ const allowedOrigins = [
 
 // 開發環境允許本地端存取，/env 裡設定 NODE_ENV="development"
 if (process.env.NODE_ENV === 'development') {
-  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
+  // 開發模式下，允許所有 localhost port（Vite 可能會跳 port）
+  allowedOrigins.push(/^http:\/\/localhost:\d+$/);
+  allowedOrigins.push(/^http:\/\/127\.0\.0\.1:\d+$/);
 }
 
 app.use(cors({
