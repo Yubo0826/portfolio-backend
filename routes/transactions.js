@@ -397,7 +397,7 @@ router.delete('/', async (req, res) => {
           },
         });
       } else {
-        const avgCost = Number((totalCost / totalShares).toFixed(2));
+        const avgCost = Number((totalCost / totalShares).toFixed(3));
         const holdingCurrency = remainingTxs.find((tx) => tx.transaction_type === 'buy')?.currency || remainingTxs[0]?.currency || 'USD';
 
         await prisma.holdings.update({
@@ -498,7 +498,7 @@ const updateHoldings = async (uid, portfolioId, symbol, name, assetType, shares,
       const totalNewCost = Number(price) * Number(shares);
       const totalShares = Number(existing.total_shares) + Number(shares);
   
-      const avgCost = totalShares > 0 ? Number(((totalOldCost + totalNewCost) / totalShares).toFixed(2)) : 0;
+      const avgCost = totalShares > 0 ? Number(((totalOldCost + totalNewCost) / totalShares).toFixed(3)) : 0;
   
       await prisma.holdings.update({
         where: {

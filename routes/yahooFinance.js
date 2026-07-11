@@ -149,7 +149,8 @@ router.get('/symbol', async (req, res) => {
     const { query } = req.query;
     console.log('Received /api/yahooFinance/symbol request:', query);
   try {
-    const result = await yahooFinance.search(query);
+    // Yahoo Search schema 偶爾漂移，這裡以無驗證模式抓原始結果避免整包失敗。
+    const result = await yahooFinance.search(query, undefined, { validateResult: false });
     const validQuotes = result.quotes.filter(q => q.isYahooFinance && q.symbol);
     res.json(validQuotes);
   } catch (error) {
