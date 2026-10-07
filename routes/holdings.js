@@ -49,7 +49,7 @@ router.post('/refresh-prices', async (req, res) => {
         if (latestPrice === null) return holding;
         return prisma.holdings.update({
           where: { id: holding.id },
-          data: { current_price: latestPrice },
+          data: { current_price: latestPrice, last_updated: new Date() },
         });
       })
     );

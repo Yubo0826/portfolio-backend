@@ -62,7 +62,7 @@ const refreshUserHoldings = async (uid, portfolio_id) => {
       if (latestPrice === null) return holding; // 抓價失敗保留舊價，避免寫入 0 造成偏移誤報
       return prisma.holdings.update({
         where: { id: holding.id },
-        data: { current_price: latestPrice },
+        data: { current_price: latestPrice, last_updated: new Date() },
       });
     })
   );
