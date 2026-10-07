@@ -3,6 +3,22 @@ const router = express.Router();
 
 import prisma from '../utils/prisma.js';
 
+// 目標配置的格式檢查，不合法回傳錯誤訊息，合法回傳 null
+// 空陣列代表清空；非空時總和要是 100%（容許 0.01 的浮點誤差），symbol 不可重複（DB 有 unique）
+export function validateAllocation(assets) {
+    if (!Array.isArray(assets)) return 'assets must be an array';
+    const seen = new Set();
+    for (const a of assets) {
+        if (typeof a?.symbol !== 'string' || !/^\S{1,10}$/.test(a.symbol)) return 'symbol must be 1-10 non-blank characters';
+        if (seen.has(a.symbol)) return `duplicate symbol ${a.symbol}`;
+        seen.add(a.symbol);
+        if (!(Number(a.target) >= 0 && Number(a.target) <= 100)) return 'target must be between 0 and 100';
+    }
+    const total = assets.reduce((sum, a) => sum + Number(a.target), 0);
+    if (assets.length && Math.abs(total - 100) > 0.01) return 'targets must add up to 100';
+    return null;
+}
+
 router.get('/', async (req, res) => {
     try {
         const { uid, portfolio_id } = req.query;
@@ -24,14 +40,21 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
     console.log('Received /api/allocation update request:', req.body);
-    const { assets, uid, portfolio_id } = req.body;
+    const { assets, uid } = req.body;
+    const portfolio_id = Number(req.body.portfolio_id);
 
-    if (!assets || !Array.isArray(assets)) {
+    if (!Number.isInteger(portfolio_id)) {
         return res.status(400).json({ message: 'Missing required fields' });
     }
+    const invalid = validateAllocation(assets);
+    if (invalid) return res.status(400).json({ message: invalid });
 
 
     try {
+        if (!await prisma.portfolios.findFirst({ where: { id: portfolio_id, uid } })) {
+            return res.status(404).json({ message: 'Portfolio not found' });
+        }
+
         // 刪舊、建新、同步 holdings 在同一個 DB transaction 內，避免目標配置被清空卻沒寫回
         const [, allocations] = await prisma.$transaction([
             // 刪除舊的 allocations
