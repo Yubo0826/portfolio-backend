@@ -2,8 +2,7 @@ import cron from 'node-cron';
 import { PrismaClient } from '../generated/prisma/index.js';
 import { checkAllPortfolios } from '../services/portfolioService.js';
 import { syncDividendsForUserHoldings } from '../routes/dividends.js';
-import YahooFinance from 'yahoo-finance2';
-const yahooFinance = new YahooFinance();
+import { getLatestPrice } from '../routes/holdings.js';
 
 const prisma = new PrismaClient();
 
@@ -48,22 +47,6 @@ const task = cron.schedule('30 15 * * *', async () => {
 });
 
 
-// 取得單一股票最新價格
-const getLatestPrice = async (symbol) => {
-  try {
-    const data = await yahooFinance.quote(symbol);
-    return (
-      data.regularMarketPrice ||
-      data.regularMarketPreviousClose ||
-      data.regularMarketOpen ||
-      0
-    );
-  } catch (error) {
-    console.error('❌ 無法取得最新價格:', symbol, error);
-    return 0;
-  }
-};
-
 // 更新特定使用者的所有 holdings
 const refreshUserHoldings = async (uid, portfolio_id) => {
   const holdings = await prisma.holdings.findMany({
@@ -77,6 +60,7 @@ const refreshUserHoldings = async (uid, portfolio_id) => {
   const updatedHoldings = await Promise.all(
     holdings.map(async (holding) => {
       const latestPrice = await getLatestPrice(holding.symbol);
+      if (latestPrice === null) return holding; // 抓價失敗保留舊價，避免寫入 0 造成偏移誤報
       return prisma.holdings.update({
         where: { id: holding.id },
         data: { current_price: latestPrice },

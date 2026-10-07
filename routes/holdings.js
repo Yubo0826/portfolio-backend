@@ -47,6 +47,7 @@ router.post('/refresh-prices', async (req, res) => {
     const updatedHoldings = await Promise.all(
       holdings.map(async (holding) => {
         const latestPrice = await getLatestPrice(holding.symbol);
+        if (latestPrice === null) return holding;
         return prisma.holdings.update({
           where: { id: holding.id },
           data: { current_price: latestPrice },
@@ -114,14 +115,14 @@ router.delete('/', async (req, res) => {
   } 
 });
 
-const getLatestPrice = async (symbol) => {
+// 抓不到價格回傳 null（不是 0），呼叫端應略過更新、保留上次的價格
+export const getLatestPrice = async (symbol) => {
   try {
     const data = await yahooFinance.quote(symbol);
-    console.log(`Fetched latest price for ${symbol}:`, data);
-    return data.regularMarketPrice || data.regularMarketPreviousClose || data.regularMarketOpen || 0;
+    return data.regularMarketPrice || data.regularMarketPreviousClose || data.regularMarketOpen || null;
   } catch (error) {
-    console.error('Error fetching latest price:', error);
-    throw new Error('Failed to fetch latest price');
+    console.error('❌ 無法取得最新價格:', symbol, error);
+    return null;
   }
 };
 export default router;
