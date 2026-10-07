@@ -58,3 +58,16 @@ export async function recalcHolding(db, uid, portfolioId, symbol) {
     },
   });
 }
+
+// 交易欄位的格式檢查（API 入口用），不合法回傳錯誤訊息，合法回傳 null
+// 上限對應 schema：shares / fee 為 Decimal(10,2)、price 為 Decimal(10,3)、symbol 為 VarChar(10)
+export function validateTransaction(tx) {
+  const shares = Number(tx.shares), price = Number(tx.price), fee = Number(tx.fee ?? 0);
+  if (typeof tx.symbol !== 'string' || !/^\S{1,10}$/.test(tx.symbol)) return 'symbol must be 1-10 non-blank characters';
+  if (tx.transaction_type !== 'buy' && tx.transaction_type !== 'sell') return "transaction_type must be 'buy' or 'sell'";
+  if (!(shares > 0 && shares < 1e8)) return 'shares must be a positive number';
+  if (!(price > 0 && price < 1e7)) return 'price must be a positive number';
+  if (!(fee >= 0 && fee < 1e8)) return 'fee must be a non-negative number';
+  if (tx.transaction_date && isNaN(new Date(tx.transaction_date))) return 'transaction_date is not a valid date';
+  return null;
+}

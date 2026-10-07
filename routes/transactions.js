@@ -4,7 +4,7 @@ const router = express.Router();
 import prisma from '../utils/prisma.js';
 
 import { createTransactionCashFlow, reverseCashFlows } from './cashFlows.js';
-import { recalcHolding } from '../services/holdingCalc.js';
+import { recalcHolding, validateTransaction } from '../services/holdingCalc.js';
 
 router.get('/', async (req, res) => {
   try {
@@ -55,8 +55,13 @@ router.post('/', async (req, res) => {
 
     const normalizedPortfolioId = Number(portfolio_id);
 
-    if (!uid || !symbol || !shares || !price || !transaction_type || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
+    if (!uid || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
       return res.status(400).json({ message: 'Missing required fields' });
+    }
+    const invalid = validateTransaction(req.body);
+    if (invalid) return res.status(400).json({ message: invalid });
+    if (!await prisma.portfolios.findFirst({ where: { id: normalizedPortfolioId, uid } })) {
+      return res.status(404).json({ message: 'Portfolio not found' });
     }
 
     // 新增交易紀錄
@@ -128,6 +133,14 @@ router.post('/bulk', async (req, res) => {
     if (!uid || !portfolio_id || !Number.isInteger(normalizedPortfolioId) || !Array.isArray(transactions) || transactions.length === 0) {
       return res.status(400).json({ message: 'Missing required fields or transactions array is empty' });
     }
+    // 任一筆不合法就整批退回，不默默略過（略過會讓使用者以為全部匯入成功）
+    for (const [i, tx] of transactions.entries()) {
+      const invalid = validateTransaction(tx);
+      if (invalid) return res.status(400).json({ message: `Row ${i + 1}: ${invalid}` });
+    }
+    if (!await prisma.portfolios.findFirst({ where: { id: normalizedPortfolioId, uid } })) {
+      return res.status(404).json({ message: 'Portfolio not found' });
+    }
 
     // 整批匯入為單一 DB transaction，任一筆失敗全部回滾
     // ponytail: 逐筆循序 create，timeout 設 60s；若匯入量大到超時，改用 createMany
@@ -144,20 +157,17 @@ router.post('/bulk', async (req, res) => {
           fee,
           transaction_type,
           transaction_date,
+          cash_account_id,
         } = tx;
-
-        if (!symbol || !shares || !price || !transaction_type) {
-          console.log('Skipping transaction due to missing fields:', tx);
-          continue; // Skip this transaction if required fields are missing
-        }
 
         symbols.add(symbol);
 
         // 新增交易紀錄
-        await db.transactions.create({
+        const newTransaction = await db.transactions.create({
           data: {
             users: { connect: { uid } }, // 連接到使用者
             portfolios: { connect: { id: normalizedPortfolioId } },
+            ...(cash_account_id && { cash_accounts: { connect: { id: Number(cash_account_id) } } }),
             symbol,
             name,
             asset_type,
@@ -169,6 +179,11 @@ router.post('/bulk', async (req, res) => {
             transaction_date: transaction_date ? new Date(transaction_date) : undefined,
           },
         });
+
+        // 和單筆新增一樣建立現金流；帳戶不屬於該使用者會丟 400，整批回滾
+        if (cash_account_id) {
+          await createTransactionCashFlow(newTransaction, transaction_type, cash_account_id, db);
+        }
       }
       for (const symbol of symbols) await recalcHolding(db, uid, normalizedPortfolioId, symbol);
     }, { timeout: 60000 });
@@ -216,9 +231,11 @@ router.put('/:id', async (req, res) => {
   const normalizedPortfolioId = Number(portfolio_id);
 
   try {
-    if (!uid || !symbol || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
+    if (!uid || !portfolio_id || !Number.isInteger(normalizedPortfolioId)) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
+    const invalid = validateTransaction(req.body);
+    if (invalid) return res.status(400).json({ message: invalid });
 
     // 找到舊的交易紀錄
     const oldTransaction = await prisma.transactions.findFirst({
