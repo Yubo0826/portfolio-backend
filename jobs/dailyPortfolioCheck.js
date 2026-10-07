@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { checkAllPortfolios } from '../services/portfolioService.js';
 import { syncDividendsForUserHoldings } from '../routes/dividends.js';
 import { getLatestPrice } from '../routes/holdings.js';
+import { checkWatchlistAlerts } from '../services/watchlistAlertService.js';
 
 import prisma from '../utils/prisma.js';
 
@@ -38,6 +39,7 @@ const task = cron.schedule('30 15 * * *', async () => {
     }
 
     await checkAllPortfolios();
+    await checkWatchlistAlerts();
 
     console.log('每日任務檢查完成。');
   } catch (error) {

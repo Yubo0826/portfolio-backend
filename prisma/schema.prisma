@@ -40,6 +40,7 @@ model users {
   portfolios    portfolios[]
   cash_accounts cash_accounts[]
   cash_flows    cash_flows[]
+  watchlist     watchlist[]
 }
 
 model cash_accounts {
@@ -144,5 +145,21 @@ model dividends {
 
   // @@index([symbol, date])
   @@unique([uid, symbol, portfolio_id, date], name: "uid_symbol_portfolio_date")
+}
+
+// 關注清單：跟使用者走，不分投資組合
+model watchlist {
+  id           Int       @id @default(autoincrement())
+  uid          String    @db.VarChar(255)
+  symbol       String    @db.VarChar(10)
+  name         String?   @db.VarChar(255)
+  asset_type   String?   @db.VarChar(255)
+  target_price Decimal?  @db.Decimal(10, 3)
+  alert_above  Boolean?  // true: 價格 >= 目標價時通知；false: 價格 <= 目標價時通知
+  alerted_at   DateTime? @db.Timestamp(6) // 已寄過通知就不再寄，改目標價時清空
+  created_at   DateTime  @default(now()) @db.Timestamp(6)
+  users        users     @relation(fields: [uid], references: [uid], onDelete: Cascade)
+
+  @@unique([uid, symbol])
 }
 

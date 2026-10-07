@@ -11,6 +11,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
  * @param {string} to 收件者 email
  * @param {string} subject 主旨
  * @param {string} html 內文（可用 HTML）
+ * @returns {Promise<boolean>} 是否寄送成功
  */
 export async function sendEmail(to, subject, html) {
   try {
@@ -24,7 +25,10 @@ export async function sendEmail(to, subject, html) {
     })
 
     console.log("Email 已發送:", result?.id || result)
+    // Resend 失敗時不 throw，而是回傳 { error }
+    return !result?.error
   } catch (err) {
     console.error("Email 發送失敗:", err)
+    return false
   }
 }
