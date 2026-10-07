@@ -2,6 +2,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 
 import { PrismaClient } from './generated/prisma/index.js';
 const prisma = new PrismaClient();
@@ -37,6 +39,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// 驗證 Firebase ID token，並用驗證後的 uid 覆蓋 client 傳來的 uid
+// ponytail: route 仍然讀 req.query.uid / req.body.uid，這裡統一覆寫，不用逐一改每個 route
+// 沒帶 token 視為未登入的 demo 帳號（前端 stores/auth.ts 的 demo-user），demo 資料任何人都能改
+initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'asset-profolio-tracker' });
+const DEMO_UID = 'demo-user';
+
+const authenticate = async (req, res, next) => {
+  const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+  let uid = DEMO_UID, email;
+  if (token) {
+    try {
+      ({ uid, email } = await getAuth().verifyIdToken(token));
+    } catch {
+      return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+  }
+  // Express 5 的 req.query 是每次重新解析的 getter，要蓋成固定值才改得動
+  Object.defineProperty(req, 'query', { value: { ...req.query, uid }, writable: true });
+  if (req.body && typeof req.body === 'object') req.body.uid = uid;
+  req.user = { uid, email };
+  next();
+};
+
 import task from './jobs/dailyPortfolioCheck.js' // 每日投資組合偏差檢查服務
 
 task.start(); // 啟動每日任務
@@ -52,17 +77,18 @@ import dividendsRoute from './routes/dividends.js';
 import cashAccountsRoute from './routes/cashAccounts.js';
 import cashFlowsRoute from './routes/cashFlows.js';
 
-// 路由掛載
-app.use('/api/transactions', transactionsRoute);
-app.use('/api/user', userRoute);
+// 路由掛載（有讀寫使用者資料的都要過 authenticate）
+app.use('/api/transactions', authenticate, transactionsRoute);
+app.use('/api/user', authenticate, userRoute);
 app.use('/api/search', searchRoute);
-app.use('/api/holdings', holdingsRoute);
-app.use('/api/portfolio', portfolioRoute);
-app.use('/api/allocation', allocationRoute);
+app.use('/api/holdings', authenticate, holdingsRoute);
+app.use('/api/portfolio', authenticate, portfolioRoute);
+app.use('/api/allocation', authenticate, allocationRoute);
+app.use(['/api/yahoo/holdings-chart', '/api/yahoo/allocation-chart'], authenticate);
 app.use('/api/yahoo', yahooFinanceRoute);
-app.use('/api/dividends', dividendsRoute);
-app.use('/api/cash-accounts', cashAccountsRoute);
-app.use('/api/cash-flows', cashFlowsRoute);
+app.use('/api/dividends', authenticate, dividendsRoute);
+app.use('/api/cash-accounts', authenticate, cashAccountsRoute);
+app.use('/api/cash-flows', authenticate, cashFlowsRoute);
 
 
 const PORT = process.env.PORT || 3000;

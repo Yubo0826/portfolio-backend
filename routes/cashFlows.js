@@ -328,19 +328,17 @@ export async function createTransactionCashFlow(transaction, transactionType, ca
 export async function createDividendCashFlows(uid, portfolioId, cashAccountId = null) {
   try {
     // 如果沒有指定現金帳戶，使用用戶的第一個帳戶
-    let accountId = cashAccountId;
-    if (!accountId) {
-      const defaultAccount = await prisma.cash_accounts.findFirst({
-        where: { uid },
-        orderBy: { created_at: 'asc' },
-      });
-      
-      if (!defaultAccount) {
-        console.log('No cash account found for user');
-        return;
-      }
-      accountId = defaultAccount.id;
+    // 指定的帳戶也要屬於該使用者，否則可以把股利灌進別人的帳戶
+    const account = await prisma.cash_accounts.findFirst({
+      where: cashAccountId ? { id: Number(cashAccountId), uid } : { uid },
+      orderBy: { created_at: 'asc' },
+    });
+
+    if (!account) {
+      console.log('No cash account found for user');
+      return;
     }
+    const accountId = account.id;
 
     // 取得最後更新現金流的時間
     const lastCashFlow = await prisma.cash_flows.findFirst({

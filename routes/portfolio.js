@@ -63,8 +63,9 @@ router.post('/', async (req, res) => {
 
 router.put('/', async (req, res) => {
   console.log('Received /api/portfolio put request:', req.body);
-  const { 
+  const {
     id,
+    uid,
     name,
     description,
     drift_threshold,
@@ -76,6 +77,11 @@ router.put('/', async (req, res) => {
   }
 
   try {
+    const owned = await prisma.portfolios.findFirst({ where: { id: Number(id), uid } });
+    if (!owned) {
+      return res.status(404).json({ message: 'Portfolio not found' });
+    }
+
     const updatedPortfolio = await prisma.portfolios.update({
       where: { id: Number(id) },
       data: {

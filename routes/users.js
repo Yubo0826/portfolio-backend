@@ -8,11 +8,8 @@ router.post('/', async (req, res) => {
   console.log('Received /api/user data:', req.body);
 
   try {
-    const {
-      uid,
-      email,
-      displayName
-    } = req.body;
+    const { uid, displayName } = req.body;
+    const email = req.user.email || req.body.email;
 
     if (!uid || !email) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -98,7 +95,8 @@ router.put('/settings', async (req, res) => {
 // 寄信測試
 router.post('/send-test-email', async (req, res) => {
   const { sendEmail } = await import('../utils/emailService.js');
-  const { to } = req.body;
+  // 只寄給 token 驗證過的本人信箱，不收 client 指定的收件人（否則就是公開寄信跳板）
+  const to = req.user.email;
 
   if (!to) {
     return res.status(400).json({ message: 'Missing recipient email address' });
@@ -121,6 +119,10 @@ router.post('/send-test-email', async (req, res) => {
 
 // 寄投資組合偏差警示信測試
 router.post('/send-drift-alert-test', async (req, res) => {
+  // 會寄信給「所有」使用者，只開放開發環境
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
   try {
     console.log('Sending drift alert test email...');
     await checkAllPortfolios();

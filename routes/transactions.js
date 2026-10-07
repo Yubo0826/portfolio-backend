@@ -229,9 +229,12 @@ router.put('/:id', async (req, res) => {
 
     // 找到舊的交易紀錄
     const oldTransaction = await prisma.transactions.findFirst({
-      where: { id: Number(id) },
+      where: { id: Number(id), uid },
     });
-    const oldShares = oldTransaction ? Number(oldTransaction.shares) : 0;
+    if (!oldTransaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+    const oldShares = Number(oldTransaction.shares);
     const newShares = Number(shares) || 0;
     let updatedShares = newShares;
 
@@ -313,6 +316,7 @@ router.delete('/', async (req, res) => {
     const transactionsToDelete = await prisma.transactions.findMany({
       where: {
         id: { in: ids.map(Number) },
+        uid,
       },
     });
 
@@ -357,6 +361,7 @@ router.delete('/', async (req, res) => {
     await prisma.transactions.deleteMany({
       where: {
         id: { in: ids.map(Number) },
+        uid,
       },
     });
 
