@@ -121,34 +121,34 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 新增現金流記錄
-    const newCashFlow = await prisma.cash_flows.create({
-      data: {
-        uid,
-        account_id: Number(account_id),
-        portfolio_id: portfolio_id ? Number(portfolio_id) : null,
-        amount: Number(amount),
-        flow_type,
-        description,
-        date: new Date(date),
-      },
-      include: {
-        cash_accounts: {
-          select: {
-            id: true,
-            name: true,
-            currency: true,
+    // 新增現金流記錄並更新帳戶餘額（同一個 DB transaction）
+    const [newCashFlow, updatedAccount] = await prisma.$transaction([
+      prisma.cash_flows.create({
+        data: {
+          uid,
+          account_id: Number(account_id),
+          portfolio_id: portfolio_id ? Number(portfolio_id) : null,
+          amount: Number(amount),
+          flow_type,
+          description,
+          date: new Date(date),
+        },
+        include: {
+          cash_accounts: {
+            select: {
+              id: true,
+              name: true,
+              currency: true,
+            },
           },
         },
-      },
-    });
-
-    // 更新帳戶餘額
-    const newBalance = Number(account.balance) + Number(amount);
-    await prisma.cash_accounts.update({
-      where: { id: Number(account_id) },
-      data: { balance: newBalance },
-    });
+      }),
+      prisma.cash_accounts.update({
+        where: { id: Number(account_id) },
+        data: { balance: { increment: Number(amount) } },
+      }),
+    ]);
+    const newBalance = updatedAccount.balance;
 
     res.status(201).json({
       message: 'Cash flow created successfully',
@@ -193,17 +193,17 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    // 更新帳戶餘額（扣回金額）
-    const newBalance = Number(cashFlow.cash_accounts.balance) - Number(cashFlow.amount);
-    await prisma.cash_accounts.update({
-      where: { id: cashFlow.account_id },
-      data: { balance: newBalance },
-    });
-
-    // 刪除記錄
-    await prisma.cash_flows.delete({
-      where: { id: Number(id) },
-    });
+    // 扣回帳戶餘額並刪除記錄（同一個 DB transaction）
+    const [updatedAccount] = await prisma.$transaction([
+      prisma.cash_accounts.update({
+        where: { id: cashFlow.account_id },
+        data: { balance: { decrement: cashFlow.amount } },
+      }),
+      prisma.cash_flows.delete({
+        where: { id: Number(id) },
+      }),
+    ]);
+    const newBalance = updatedAccount.balance;
 
     res.json({ 
       message: 'Cash flow deleted successfully',
@@ -281,17 +281,23 @@ router.get('/stats', async (req, res) => {
 });
 
 // Helper function: 自動建立交易相關的現金流
-export async function createTransactionCashFlow(transaction, transactionType, cashAccountId) {
+// db: 傳入 prisma.$transaction 的 client，讓現金流與交易一起提交或回滾
+export async function createTransactionCashFlow(transaction, transactionType, cashAccountId, db = prisma) {
   try {
     if (!cashAccountId) {
       return; // 沒有指定現金帳戶，不建立現金流
     }
 
     const accountId = Number(cashAccountId);
+
+    // 確認現金帳戶屬於該使用者，避免改到別人的餘額
+    const owned = Number.isInteger(accountId) && await db.cash_accounts.findFirst({ where: { id: accountId, uid: transaction.uid } });
+    if (!owned) throw Object.assign(new Error('Cash account not found'), { status: 400 });
+
     const amount = Number(transaction.shares) * Number(transaction.price) + (Number(transaction.fee) || 0);
     const flowAmount = transactionType === 'buy' ? -amount : amount; // 買入為負，賣出為正
 
-    const cashFlow = await prisma.cash_flows.create({
+    const cashFlow = await db.cash_flows.create({
       data: {
         uid: transaction.uid,
         account_id: accountId,
@@ -305,23 +311,30 @@ export async function createTransactionCashFlow(transaction, transactionType, ca
       },
     });
 
-    // 更新帳戶餘額
-    const account = await prisma.cash_accounts.findUnique({
+    // 更新帳戶餘額（increment 為原子操作，避免併發時讀後寫覆蓋）
+    await db.cash_accounts.update({
       where: { id: accountId },
+      data: { balance: { increment: flowAmount } },
     });
-
-    if (account) {
-      await prisma.cash_accounts.update({
-        where: { id: accountId },
-        data: { balance: Number(account.balance) + flowAmount },
-      });
-    }
 
     return cashFlow;
   } catch (error) {
     console.error('Error creating transaction cash flow:', error);
     throw error;
   }
+}
+
+// Helper function: 刪除符合 where 的現金流，並把金額從對應帳戶扣回
+// 會寫多張表，必須在 prisma.$transaction 內呼叫（db 為 transaction client）
+export async function reverseCashFlows(db, where) {
+  const sums = await db.cash_flows.groupBy({ by: ['account_id'], where, _sum: { amount: true } });
+  for (const s of sums) {
+    await db.cash_accounts.update({
+      where: { id: s.account_id },
+      data: { balance: { decrement: s._sum.amount } },
+    });
+  }
+  await db.cash_flows.deleteMany({ where });
 }
 
 // Helper function: 自動建立股利相關的現金流
@@ -363,38 +376,40 @@ export async function createDividendCashFlows(uid, portfolioId, cashAccountId = 
 
     console.log(`Found ${newDividends.length} new dividends to process`);
 
-    const createdFlows = [];
-    for (const dividend of newDividends) {
-      const totalDividend = Number(dividend.amount) * Number(dividend.shares);
-      
-      const cashFlow = await prisma.cash_flows.create({
-        data: {
-          uid,
-          account_id: accountId,
-          portfolio_id: portfolioId,
-          related_dividend_id: dividend.id,
-          related_symbol: dividend.symbol,
-          amount: totalDividend,
-          flow_type: 'dividend',
-          description: `${dividend.symbol} 股利收入 (${dividend.shares} 股 × $${dividend.amount})`,
-          date: dividend.date,
-        },
-      });
+    // 整批股利現金流為單一 DB transaction，任一筆失敗全部回滾
+    return await prisma.$transaction(async (db) => {
+      const createdFlows = [];
+      for (const dividend of newDividends) {
+        const totalDividend = Number(dividend.amount) * Number(dividend.shares);
 
-      // 更新帳戶餘額
-      await prisma.cash_accounts.update({
-        where: { id: accountId },
-        data: {
-          balance: {
-            increment: totalDividend,
+        const cashFlow = await db.cash_flows.create({
+          data: {
+            uid,
+            account_id: accountId,
+            portfolio_id: portfolioId,
+            related_dividend_id: dividend.id,
+            related_symbol: dividend.symbol,
+            amount: totalDividend,
+            flow_type: 'dividend',
+            description: `${dividend.symbol} 股利收入 (${dividend.shares} 股 × $${dividend.amount})`,
+            date: dividend.date,
           },
-        },
-      });
+        });
 
-      createdFlows.push(cashFlow);
-    }
+        // 更新帳戶餘額
+        await db.cash_accounts.update({
+          where: { id: accountId },
+          data: {
+            balance: {
+              increment: totalDividend,
+            },
+          },
+        });
 
-    return createdFlows;
+        createdFlows.push(cashFlow);
+      }
+      return createdFlows;
+    }, { timeout: 60000 });
   } catch (error) {
     console.error('Error creating dividend cash flows:', error);
     throw error;

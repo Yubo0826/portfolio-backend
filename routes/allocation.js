@@ -33,39 +33,42 @@ router.post('/', async (req, res) => {
 
 
     try {
-        // 刪除舊的 allocations
-        await prisma.allocation.deleteMany({
-            where: { uid, portfolio_id },
-        });
+        // 刪舊、建新、同步 holdings 在同一個 DB transaction 內，避免目標配置被清空卻沒寫回
+        const [, allocations] = await prisma.$transaction([
+            // 刪除舊的 allocations
+            prisma.allocation.deleteMany({
+                where: { uid, portfolio_id },
+            }),
+
+            // 新增新的 allocations
+            prisma.allocation.createMany({
+                data: assets.map(asset => ({
+                    uid,
+                    portfolio_id,
+                    symbol: asset.symbol,
+                    name: asset.name,
+                    target: asset.target,
+                })),
+            }),
+
+            // 同步 target 到 holdings
+            ...assets.map(asset =>
+                prisma.holdings.updateMany({
+                    where: {
+                        uid,
+                        portfolio_id,
+                        symbol: asset.symbol,
+                    },
+                    data: {
+                        target_percentage: asset.target,
+                    },
+                })
+            ),
+        ]);
 
         if (assets.length === 0) {
             return res.status(200).json({ message: 'Clean allocations successfully' });
         }
-
-        // 新增新的 allocations
-        const allocations = await prisma.allocation.createMany({
-            data: assets.map(asset => ({
-                uid,
-                portfolio_id,
-                symbol: asset.symbol,
-                name: asset.name,
-                target: asset.target,
-            })),
-        });
-
-        // 同步 target 到 holdings
-        await Promise.all(assets.map(asset =>
-            prisma.holdings.updateMany({
-                where: {
-                    uid,
-                    portfolio_id,
-                    symbol: asset.symbol,
-                },
-                data: {
-                    target_percentage: asset.target,
-                },
-            })
-        ));
 
         res.status(200).json({
             message: 'Allocations updated successfully',

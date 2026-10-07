@@ -6,6 +6,8 @@ const yahooFinance = new YahooFinance();
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+import { reverseCashFlows } from './cashFlows.js';
+
 router.get('/', async (req, res) => {
   try {
     const { uid, portfolio_id } = req.query;
@@ -69,37 +71,38 @@ router.delete('/', async (req, res) => {
   }
 
   try {
+    // 限定在同一個 portfolio，避免刪 A 組合的持股卻刪到 B 組合同代號的交易
+    const holdingsWhere = {
+      id: { in: ids.map(Number) },
+      uid,
+      portfolio_id: Number(portfolio_id),
+    };
+
     // 找出將要刪除的 symbols
     const holdingsToDelete = await prisma.holdings.findMany({
-      where: {
-        id: { in: ids.map(Number) },
-        uid,
-      },
+      where: holdingsWhere,
       select: { symbol: true }
     });
 
-    // 刪除 holdings
-    const deletedHoldings = await prisma.holdings.deleteMany({
-      where: {
-        id: { in: ids.map(Number) },
-        uid,
-      },
-    });
-
-    // 刪除連動的 transactions
-    await prisma.transactions.deleteMany({
-      where: {
-        uid: uid,
-        portfolio_id: Number(portfolio_id),
-        symbol: {
-          in: holdingsToDelete.map(h => h.symbol),
-        },
-      }
-    });
-
-    if (deletedHoldings.count === 0) {
+    if (holdingsToDelete.length === 0) {
       return res.status(404).json({ message: 'Holdings not found' });
     }
+
+    const txWhere = {
+      uid,
+      portfolio_id: Number(portfolio_id),
+      symbol: { in: holdingsToDelete.map(h => h.symbol) },
+    };
+
+    // 持股、交易紀錄、現金流在同一個 DB transaction 內
+    await prisma.$transaction(async (db) => {
+      await db.holdings.deleteMany({ where: holdingsWhere });
+
+      // 刪除連動 transactions 前，先扣回它們的現金流
+      const txIds = (await db.transactions.findMany({ where: txWhere, select: { id: true } })).map(t => t.id);
+      await reverseCashFlows(db, { uid, related_transaction_id: { in: txIds } });
+      await db.transactions.deleteMany({ where: txWhere });
+    });
 
     const holdings = await prisma.holdings.findMany({
       where: { uid, portfolio_id: Number(portfolio_id) },

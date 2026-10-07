@@ -4,6 +4,8 @@ const router = express.Router();
 import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
+import { reverseCashFlows } from './cashFlows.js';
+
 router.get('/', async (req, res) => {
   try {
     const { uid } = req.query;
@@ -121,45 +123,17 @@ router.delete('/', async (req, res) => {
     if (portfolios.length !== ids.length) {
       return res.status(404).json({ message: 'Some portfolios not found for the user' });
     }
-    // 刪除 portfolios
-    const deletedPortfolios = await prisma.portfolios.deleteMany({
-      where: {
-        id: { in: ids.map(Number) },
-        uid,
-      },
-    });
+    await prisma.$transaction(async (db) => {
+      // cash_flows 會被 FK cascade 刪掉，先把金額從帳戶扣回，否則餘額會對不上
+      await reverseCashFlows(db, { uid, portfolio_id: { in: ids.map(Number) } });
 
-    if (deletedPortfolios.count === 0) {
-      return res.status(404).json({ message: 'Portfolios not found' });
-    }
-
-    // 刪除連動的 holdings & transactions & dividends & allocations
-    await prisma.holdings.deleteMany({
-      where: {
-        portfolio_id: { in: ids.map(Number) },
-        uid
-      },
-    });
-
-    await prisma.transactions.deleteMany({
-      where: {
-        portfolio_id: { in: ids.map(Number) },
-        uid
-      },
-    });
-
-    await prisma.dividends.deleteMany({
-      where: {
-        portfolio_id: { in: ids.map(Number) },
-        uid
-      },
-    });
-
-    await prisma.allocation.deleteMany({
-      where: {
-        portfolio_id: { in: ids.map(Number) },
-        uid
-      },
+      // holdings / transactions / dividends / allocation 由 FK onDelete: Cascade 一併刪除
+      await db.portfolios.deleteMany({
+        where: {
+          id: { in: ids.map(Number) },
+          uid,
+        },
+      });
     });
 
     res.json({ message: 'Portfolios deleted successfully' });
