@@ -6,6 +6,7 @@ const yahooFinance = new YahooFinance();
 const router = express.Router();
 
 import prisma from '../utils/prisma.js';
+import { USD_TWD_SYMBOL, convert, ratesForDates } from '../services/fx.js';
 
 const RECOMMENDATION_CARD_DEFAULT_LIMIT = 5;
 const RECOMMENDATION_CARD_MAX_LIMIT = 10;
@@ -185,6 +186,8 @@ router.get('/chart', async (req, res) => {
 router.get('/holdings-chart', async (req, res) => {
   const { uid, portfolio_id, interval = '1d' } = req.query;
   let { period1, period2 } = req.query;
+  // 回傳的市值換成這個幣別（逐日用當天的歷史匯率）
+  const currency = String(req.query.currency || 'USD').toUpperCase();
 
   try {
     if (!uid || !portfolio_id) {
@@ -192,6 +195,9 @@ router.get('/holdings-chart', async (req, res) => {
     }
     if (!['1d', '1wk', '1mo'].includes(interval)) {
       return res.status(400).json({ message: 'interval must be one of 1d | 1wk | 1mo' });
+    }
+    if (!['USD', 'TWD'].includes(currency)) {
+      return res.status(400).json({ message: 'currency must be USD | TWD' });
     }
 
     // 1) 抓此 portfolio 的所有交易（依日期排序）
@@ -233,9 +239,11 @@ router.get('/holdings-chart', async (req, res) => {
 
     // 3) 交易分組（按 symbol），同時規範 type 為 buy/sell
     const txBySymbol = {};
+    const currencyBySymbol = {}; // 與 holdingCalc 相同：取該 symbol 第一筆交易的幣別
     for (const tx of txs) {
       const symbol = tx.symbol;
       const type = String(tx.transaction_type || '').toLowerCase();
+      currencyBySymbol[symbol] ??= String(tx.currency || 'USD').toUpperCase();
       if (!txBySymbol[symbol]) txBySymbol[symbol] = [];
       txBySymbol[symbol].push({
         date: new Date(tx.transaction_date),
@@ -296,6 +304,26 @@ router.get('/holdings-chart', async (req, res) => {
     // 5) 生成排序後的日期清單（使用價格的交易日，不含週末/休市）
     const dates = Array.from(dateSet).sort(); // 'YYYY-MM-DD' 字串排序即時間排序
 
+    // 5-1) 有標的幣別和輸出幣別不同時，才抓 USD/TWD 歷史匯率
+    const fxRaw = new Map();
+    if (symbols.some((s) => currencyBySymbol[s] !== currency)) {
+      try {
+        // 匯率往前多抓 10 天，期間第一天剛好是匯市假日時也有前一天可沿用
+        const fxStart = new Date(startDate.getTime() - 10 * 86400000);
+        const fx = await yahooFinance.chart(USD_TWD_SYMBOL, { ...yfOpts, period1: fxStart });
+        for (const q of fx?.quotes || []) {
+          if (q.close != null && q.date) fxRaw.set(toDateKeyUTC(new Date(q.date)), Number(q.close));
+        }
+      } catch (e) {
+        console.warn('[holdings-chart] Failed to fetch FX history:', e?.message || e);
+      }
+      if (fxRaw.size === 0) {
+        // 沒有匯率就無法正確加總不同幣別，回錯誤比回一條錯的線好
+        return res.status(502).json({ message: 'No FX data for currency conversion' });
+      }
+    }
+    const fxByDate = ratesForDates([...new Set([...fxRaw.keys(), ...dates])].sort(), fxRaw);
+
     // 6) 以「移動指標」方式累積每檔的持股，逐日計算 Portfolio 總市值
     const runningShares = {};  // { AAPL: 0, ... }
     const txIndex = {};        // { AAPL: 0, ... }
@@ -352,7 +380,7 @@ router.get('/holdings-chart', async (req, res) => {
 
         const shares = runningShares[s];
         if (!shares) continue;
-        dayValue += shares * px;
+        dayValue += convert(shares * px, currencyBySymbol[s], currency, fxByDate.get(dk));
       }
 
       // 輸出（保留兩位小數）
