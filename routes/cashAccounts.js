@@ -1,8 +1,7 @@
 import express from 'express';
 const router = express.Router();
 
-import { PrismaClient } from '../generated/prisma/index.js';
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
 
 // 取得所有現金帳戶
 router.get('/', async (req, res) => {

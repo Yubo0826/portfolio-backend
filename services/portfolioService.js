@@ -1,5 +1,4 @@
-import { PrismaClient } from '../generated/prisma/index.js';
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
 
 import { sendEmail } from '../utils/emailService.js';
 

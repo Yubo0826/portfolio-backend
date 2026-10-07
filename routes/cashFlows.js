@@ -1,8 +1,7 @@
 import express from 'express';
 const router = express.Router();
 
-import { PrismaClient } from '../generated/prisma/index.js';
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
 
 // 取得現金流記錄（支援分頁和篩選）
 router.get('/', async (req, res) => {

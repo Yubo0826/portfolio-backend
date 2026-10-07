@@ -1,10 +1,9 @@
 import cron from 'node-cron';
-import { PrismaClient } from '../generated/prisma/index.js';
 import { checkAllPortfolios } from '../services/portfolioService.js';
 import { syncDividendsForUserHoldings } from '../routes/dividends.js';
 import { getLatestPrice } from '../routes/holdings.js';
 
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
 
 
 /*

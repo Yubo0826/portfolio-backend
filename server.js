@@ -5,9 +5,6 @@ import cors from 'cors';
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
-import { PrismaClient } from './generated/prisma/index.js';
-const prisma = new PrismaClient();
-
 dotenv.config();
 
 const app = express();
@@ -32,12 +29,6 @@ app.use(cors({
 }));
 
 app.use(express.json()); //自動解析 Content-Type: application/json 的請求 body
-
-// 將 Prisma 傳給每個 route（如果需要）
-app.use((req, res, next) => {
-  req.prisma = prisma;
-  next();
-});
 
 // 驗證 Firebase ID token，並用驗證後的 uid 覆蓋 client 傳來的 uid
 // ponytail: route 仍然讀 req.query.uid / req.body.uid，這裡統一覆寫，不用逐一改每個 route

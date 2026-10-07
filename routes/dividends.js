@@ -3,8 +3,7 @@ const router = express.Router();
 import YahooFinance from 'yahoo-finance2';
 const yahooFinance = new YahooFinance();
 
-import { PrismaClient } from '../generated/prisma/index.js';
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
 
 import { createDividendCashFlows } from './cashFlows.js';
 

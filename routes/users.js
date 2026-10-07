@@ -1,10 +1,10 @@
 import express from 'express';
 const router = express.Router();
 import { checkAllPortfolios } from '../services/portfolioService.js';
+import prisma from '../utils/prisma.js';
 
 // 建立新使用者
 router.post('/', async (req, res) => {
-  const prisma = req.prisma;
   console.log('Received /api/user data:', req.body);
 
   try {
@@ -41,7 +41,6 @@ router.post('/', async (req, res) => {
 // 獲取使用者設定資料
 router.get('/settings', async (req, res) => {
   console.log('Received /api/user/settings request with query:', req.query);
-  const prisma = req.prisma;
   const { uid } = req.query;
 
   if (!uid) {
@@ -69,7 +68,6 @@ router.get('/settings', async (req, res) => {
 
 // 更改使用者設定
 router.put('/settings', async (req, res) => {
-  const prisma = req.prisma;
   console.log('Received /api/user/settings data:', req.body);
   try {
     const {

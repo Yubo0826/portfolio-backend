@@ -5,8 +5,7 @@ const yahooFinance = new YahooFinance();
 
 const router = express.Router();
 
-import { PrismaClient } from '../generated/prisma/index.js';
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma.js';
 
 const RECOMMENDATION_CARD_DEFAULT_LIMIT = 5;
 const RECOMMENDATION_CARD_MAX_LIMIT = 10;
