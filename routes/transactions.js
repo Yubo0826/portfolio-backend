@@ -4,6 +4,7 @@ const router = express.Router();
 import prisma from '../utils/prisma.js';
 
 import { recalcHolding, validateTransaction } from '../services/holdingCalc.js';
+import { syncDividendsForUserHoldings } from './dividends.js';
 
 router.get('/', async (req, res) => {
   try {
@@ -98,6 +99,8 @@ router.post('/', async (req, res) => {
         portfolio_id: normalizedPortfolioId
        },
     });
+    // 交易變動後背景重算配息（不等 Yahoo 回應）
+    syncDividendsForUserHoldings(uid, normalizedPortfolioId).catch(err => console.error('配息同步失敗:', err));
     res.status(201).json({
       message: 'Transaction created successfully',
       transactions,
@@ -182,6 +185,8 @@ router.post('/bulk', async (req, res) => {
         portfolio_id: normalizedPortfolioId
        },
     });
+    // 交易變動後背景重算配息（不等 Yahoo 回應）
+    syncDividendsForUserHoldings(uid, normalizedPortfolioId).catch(err => console.error('配息同步失敗:', err));
     res.status(201).json({
       message: 'success',
       transactions: allTransactions,
@@ -254,6 +259,8 @@ router.put('/:id', async (req, res) => {
         portfolio_id: normalizedPortfolioId
        },
     });
+    // 交易變動後背景重算配息（不等 Yahoo 回應）
+    syncDividendsForUserHoldings(uid, normalizedPortfolioId).catch(err => console.error('配息同步失敗:', err));
     res.status(200).json({
       transactions,
       holdings,
@@ -322,6 +329,8 @@ router.delete('/', async (req, res) => {
        },
     });
 
+    // 交易變動後背景重算配息（不等 Yahoo 回應）
+    syncDividendsForUserHoldings(uid, normalizedPortfolioId).catch(err => console.error('配息同步失敗:', err));
     res.status(200).json({
       message: 'Transactions deleted successfully',
       transactions,

@@ -88,6 +88,15 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
 
   const now = new Date();
 
+  // 清掉已無交易的代號，以及舊版 date*1000 寫進去的未來日期垃圾資料
+  await prisma.dividends.deleteMany({
+    where: {
+      uid,
+      portfolio_id: Number(portfolioId),
+      OR: [{ symbol: { notIn: Object.keys(symbolGroups) } }, { date: { gt: now } }],
+    },
+  });
+
   for (const symbol of Object.keys(symbolGroups)) {
     const fromDate = symbolGroups[symbol].date;
     const period1 = fromDate.toISOString().slice(0, 10); // 'YYYY-MM-DD'
@@ -105,38 +114,28 @@ async function syncDividendsForUserHoldings(uid, portfolioId) {
       const dividends = result?.events?.dividends ?? [];
 
       for (const dividend of dividends) {
-        const dividendDate = new Date(dividend.date * 1000); // 配息日期
-        
-        // 計算此配息發生前的持有總股數（所有已完成的交易）
+        const dividendDate = new Date(dividend.date); // yahoo-finance2 v3 已回傳 Date（除息日）
+        const exDay = dividendDate.toISOString().slice(0, 10);
+
+        // 除息日「前」買進才領得到，除息日當天買的不算
         const sharesAtDividend = transactions
-          .filter(tx => tx.symbol === symbol && new Date(tx.transaction_date) <= dividendDate)
+          .filter(tx => tx.symbol === symbol && tx.transaction_date.toISOString().slice(0, 10) < exDay)
           .reduce((total, tx) => {
             const shares = Number(tx.shares) || 0;
             return tx.transaction_type === 'buy' ? total + shares : total - shares;
           }, 0);
 
-        const existing = await prisma.dividends.findFirst({
-          where: {
-            uid,
-            portfolio_id: Number(portfolioId),
-            symbol,
-            date: new Date(dividend.date * 1000),
-          },
-        });
-
-        if (!existing) {
-          await prisma.dividends.create({
-            data: {
-              uid,
-              portfolio_id: Number(portfolioId),
-              symbol,
-              name: symbolGroups[symbol].name,
-              shares: sharesAtDividend,
-              date: dividendDate,
-              amount: dividend.amount,
-            },
-          });
+        const key = { uid, symbol, portfolio_id: Number(portfolioId), date: dividendDate };
+        if (sharesAtDividend <= 0) {
+          await prisma.dividends.deleteMany({ where: key });
+          continue;
         }
+        // upsert：交易改動後重跑會更新股數
+        await prisma.dividends.upsert({
+          where: { uid_symbol_portfolio_date: key },
+          update: { shares: sharesAtDividend, name: symbolGroups[symbol].name },
+          create: { ...key, name: symbolGroups[symbol].name, shares: sharesAtDividend, amount: dividend.amount },
+        });
       }
     } catch (err) {
       console.error(`同步 ${symbol} 時出錯：`, err.message);
