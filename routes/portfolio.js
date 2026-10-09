@@ -4,6 +4,11 @@ const router = express.Router();
 import prisma from '../utils/prisma.js';
 
 
+// 製作副本用：去掉 id 讓 DB 重新編號，改掛到新組合
+// ponytail: 現金流功能已移除但 cash_account_id 欄位還在 DB，副本一律清空，drop 欄位時這裡一起拿掉
+export const copyRows = (rows, portfolioId) =>
+  rows.map(({ id, portfolio_id, cash_account_id, ...rest }) => ({ ...rest, portfolio_id: portfolioId }));
+
 router.get('/', async (req, res) => {
   try {
     const { uid } = req.query;
@@ -31,7 +36,8 @@ router.post('/', async (req, res) => {
     name,
     description,
     drift_threshold,
-    enable_email_alert
+    enable_email_alert,
+    source_id, // 製作副本時帶入來源組合 id，一併複製交易、持股、目標配置與股息
   } = req.body;
 
   if (!uid || !name) {
@@ -39,15 +45,34 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const newPortfolio = await prisma.portfolios.create({
-      data: {
-        uid,
-        name,
-        description,
-        drift_threshold: drift_threshold ? Number(drift_threshold) / 100 : null,
-        enable_email_alert
-      },
-    });
+    if (source_id && !await prisma.portfolios.findFirst({ where: { id: Number(source_id), uid } })) {
+      return res.status(404).json({ message: 'Portfolio not found' });
+    }
+
+    const newPortfolio = await prisma.$transaction(async (db) => {
+      const created = await db.portfolios.create({
+        data: {
+          uid,
+          name,
+          description,
+          drift_threshold: drift_threshold ? Number(drift_threshold) / 100 : null,
+          enable_email_alert
+        },
+      });
+      if (!source_id) return created;
+
+      const where = { uid, portfolio_id: Number(source_id) };
+      for (const table of ['transactions', 'holdings', 'allocation', 'dividends']) {
+        const rows = await db[table].findMany({ where });
+        if (rows.length) await db[table].createMany({ data: copyRows(rows, created.id) });
+      }
+      // 帶回持股，列表頁才能立即算出副本的檔數與市值
+      created.holdings = await db.holdings.findMany({
+        where: { portfolio_id: created.id },
+        select: { currency: true, current_price: true, total_shares: true },
+      });
+      return created;
+    }, { timeout: 60000 });
 
     newPortfolio.drift_threshold = newPortfolio.drift_threshold ? Number(newPortfolio.drift_threshold) * 100 : null;
     
