@@ -3,7 +3,6 @@ const router = express.Router();
 
 import prisma from '../utils/prisma.js';
 
-import { createTransactionCashFlow, reverseCashFlows } from './cashFlows.js';
 import { recalcHolding, validateTransaction } from '../services/holdingCalc.js';
 
 router.get('/', async (req, res) => {
@@ -50,7 +49,6 @@ router.post('/', async (req, res) => {
       fee,
       transaction_type,
       transaction_date,
-      cash_account_id,
     } = req.body;
 
     const normalizedPortfolioId = Number(portfolio_id);
@@ -79,22 +77,12 @@ router.post('/', async (req, res) => {
       transaction_date: transaction_date ? new Date(transaction_date) : undefined,
     };
 
-    // 如果有指定現金帳戶，使用關聯連接
-    if (cash_account_id) {
-      transactionData.cash_accounts = { connect: { id: Number(cash_account_id) } };
-    }
-
-    // 持股、交易紀錄、現金流在同一個 DB transaction 內，任一步失敗全部回滾
+    // 持股、交易紀錄在同一個 DB transaction 內，任一步失敗全部回滾
     await prisma.$transaction(async (db) => {
-      const newTransaction = await db.transactions.create({
+      await db.transactions.create({
         data: transactionData,
       });
       await recalcHolding(db, uid, normalizedPortfolioId, symbol);
-
-      // 如果有指定現金帳戶，自動建立現金流記錄
-      if (cash_account_id) {
-        await createTransactionCashFlow(newTransaction, transaction_type, cash_account_id, db);
-      }
     });
 
     // 回傳新的所有交易紀錄
@@ -157,17 +145,15 @@ router.post('/bulk', async (req, res) => {
           fee,
           transaction_type,
           transaction_date,
-          cash_account_id,
         } = tx;
 
         symbols.add(symbol);
 
         // 新增交易紀錄
-        const newTransaction = await db.transactions.create({
+        await db.transactions.create({
           data: {
             users: { connect: { uid } }, // 連接到使用者
             portfolios: { connect: { id: normalizedPortfolioId } },
-            ...(cash_account_id && { cash_accounts: { connect: { id: Number(cash_account_id) } } }),
             symbol,
             name,
             asset_type,
@@ -179,11 +165,6 @@ router.post('/bulk', async (req, res) => {
             transaction_date: transaction_date ? new Date(transaction_date) : undefined,
           },
         });
-
-        // 和單筆新增一樣建立現金流；帳戶不屬於該使用者會丟 400，整批回滾
-        if (cash_account_id) {
-          await createTransactionCashFlow(newTransaction, transaction_type, cash_account_id, db);
-        }
       }
       for (const symbol of symbols) await recalcHolding(db, uid, normalizedPortfolioId, symbol);
     }, { timeout: 60000 });
@@ -245,7 +226,7 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Transaction not found' });
     }
     await prisma.$transaction(async (db) => {
-      const updatedTransaction = await db.transactions.update({
+      await db.transactions.update({
         where: { id: Number(id) },
         data: {
           shares,
@@ -259,12 +240,6 @@ router.put('/:id', async (req, res) => {
 
       // 交易不會改 symbol / portfolio，所以以舊交易的為準重算持股
       await recalcHolding(db, uid, oldTransaction.portfolio_id, oldTransaction.symbol);
-
-      // 現金流跟著交易重算：扣回舊的，再依新的股數/價格/手續費重建
-      await reverseCashFlows(db, { uid, related_transaction_id: updatedTransaction.id });
-      if (updatedTransaction.cash_account_id) {
-        await createTransactionCashFlow(updatedTransaction, transaction_type, updatedTransaction.cash_account_id, db);
-      }
     });
     
     const transactions = await prisma.transactions.findMany({
@@ -313,24 +288,21 @@ router.delete('/', async (req, res) => {
       return res.status(404).json({ message: 'No transactions found to delete' });
     }
 
-    // Step 2~5 在同一個 DB transaction 內，避免現金帳戶、交易、持股不一致
+    // 以下在同一個 DB transaction 內，避免交易、持股不一致
     await prisma.$transaction(async (db) => {
-      // Step 2: 刪除相關的現金流記錄並更新帳戶餘額
-      await reverseCashFlows(db, { uid, related_transaction_id: { in: transactionsToDelete.map(tx => tx.id) } });
-
-      // Step 3: 建立受影響的 holdings 清單
+      // Step 2: 建立受影響的 holdings 清單
       const affectedHoldingsSet = new Set(
         transactionsToDelete.map(tx => tx.symbol)
       );
 
-      // Step 4: 刪除交易紀錄
+      // Step 3: 刪除交易紀錄
       await db.transactions.deleteMany({
         where: {
           id: { in: transactionsToDelete.map(tx => tx.id) },
         },
       });
 
-      // Step 5: 從剩下的交易重新計算每一筆受影響的 holdings
+      // Step 4: 從剩下的交易重新計算每一筆受影響的 holdings
       for (const symbol of affectedHoldingsSet) {
         await recalcHolding(db, uid, normalizedPortfolioId, symbol);
       }

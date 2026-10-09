@@ -14,7 +14,7 @@ This document provides context ensuring AI coding agents can work effectively in
     import { PrismaClient } from '../generated/prisma/index.js'; // Adjust relative path as needed
     ```
 - **Service Layer**:
-  - `routes/`: Handles HTTP requests (controllers). some route files export helper functions for other routes (e.g., `createTransactionCashFlow` in `routes/cashFlows.js`).
+  - `routes/`: Handles HTTP requests (controllers).
   - `services/`: Encapsulates complex business logic (e.g., portfolio analysis in `portfolioService.js`).
   - `jobs/`: Scheduled background tasks (e.g., `dailyPortfolioCheck.js`) using `node-cron`.
   - `utils/`: Shared utilities (e.g., `emailService.js`).
@@ -50,11 +50,10 @@ This document provides context ensuring AI coding agents can work effectively in
 - **External Data**: `yahoo-finance2` is used for fetching stock prices and market data.
 - **Scheduling**: `node-cron` in `jobs/` handles periodic tasks (e.g., daily portfolio checks at 15:30).
 - **Cross-Component Logic**:
-  - Transaction creation (`routes/transactions.js`) may trigger cash flow updates via `createTransactionCashFlow` imported from `routes/cashFlows.js`.
   - Background jobs import logic from `services/` and `routes/` to perform maintenance.
 
 ## ⚠️ Gotchas
 
 - **Prisma Path**: Do NOT import `@prisma/client` directly. structure imports to point to `../generated/prisma/index.js`.
 - **Foreign Keys**: `uid` in tables links to `users.uid`. Check constraints carefully when creating related records.
-- **Circular Dependencies**: Be cautious when importing between route files (e.g., `transactions.js` <-> `cashFlows.js`).
+- **Circular Dependencies**: Be cautious when importing between route files.

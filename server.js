@@ -65,8 +65,6 @@ import portfolioRoute from './routes/portfolio.js';
 import allocationRoute from './routes/allocation.js';
 import yahooFinanceRoute from './routes/yahooFinance.js';
 import dividendsRoute from './routes/dividends.js';
-import cashAccountsRoute from './routes/cashAccounts.js';
-import cashFlowsRoute from './routes/cashFlows.js';
 import watchlistRoute from './routes/watchlist.js';
 
 // 路由掛載（有讀寫使用者資料的都要過 authenticate）
@@ -79,8 +77,6 @@ app.use('/api/allocation', authenticate, allocationRoute);
 app.use(['/api/yahoo/holdings-chart', '/api/yahoo/allocation-chart'], authenticate);
 app.use('/api/yahoo', yahooFinanceRoute);
 app.use('/api/dividends', authenticate, dividendsRoute);
-app.use('/api/cash-accounts', authenticate, cashAccountsRoute);
-app.use('/api/cash-flows', authenticate, cashFlowsRoute);
 app.use('/api/watchlist', authenticate, watchlistRoute);
 
 

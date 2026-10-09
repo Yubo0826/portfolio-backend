@@ -3,7 +3,6 @@ const router = express.Router();
 
 import prisma from '../utils/prisma.js';
 
-import { reverseCashFlows } from './cashFlows.js';
 
 router.get('/', async (req, res) => {
   try {
@@ -123,9 +122,6 @@ router.delete('/', async (req, res) => {
       return res.status(404).json({ message: 'Some portfolios not found for the user' });
     }
     await prisma.$transaction(async (db) => {
-      // cash_flows 會被 FK cascade 刪掉，先把金額從帳戶扣回，否則餘額會對不上
-      await reverseCashFlows(db, { uid, portfolio_id: { in: ids.map(Number) } });
-
       // holdings / transactions / dividends / allocation 由 FK onDelete: Cascade 一併刪除
       await db.portfolios.deleteMany({
         where: {

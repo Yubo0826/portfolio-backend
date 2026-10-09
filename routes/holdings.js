@@ -5,7 +5,6 @@ const yahooFinance = new YahooFinance();
 
 import prisma from '../utils/prisma.js';
 
-import { reverseCashFlows } from './cashFlows.js';
 
 router.get('/', async (req, res) => {
   try {
@@ -94,13 +93,9 @@ router.delete('/', async (req, res) => {
       symbol: { in: holdingsToDelete.map(h => h.symbol) },
     };
 
-    // 持股、交易紀錄、現金流在同一個 DB transaction 內
+    // 持股、交易紀錄在同一個 DB transaction 內
     await prisma.$transaction(async (db) => {
       await db.holdings.deleteMany({ where: holdingsWhere });
-
-      // 刪除連動 transactions 前，先扣回它們的現金流
-      const txIds = (await db.transactions.findMany({ where: txWhere, select: { id: true } })).map(t => t.id);
-      await reverseCashFlows(db, { uid, related_transaction_id: { in: txIds } });
       await db.transactions.deleteMany({ where: txWhere });
     });
 
