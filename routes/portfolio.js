@@ -12,8 +12,20 @@ export const copyRows = (rows, portfolioId) =>
 router.get('/', async (req, res) => {
   try {
     const { uid } = req.query;
+    // 一併帶回計算市值所需的最小持股欄位，避免列表頁對每個組合各打一次 /api/holdings。
+    // 注意：市值不在後端加總 —— 後端不知道使用者的顯示幣別，也沒有匯率，
+    // 各列幣別不同時相加會得到台幣加美金的無意義數字（參考 services/portfolioService.js 的反例）。
     const portfolios = await prisma.portfolios.findMany({
       where: { uid },
+      include: {
+        holdings: {
+          select: {
+            currency: true,
+            current_price: true,
+            total_shares: true,
+          },
+        },
+      },
     });
 
     portfolios.forEach(p => {

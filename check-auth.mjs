@@ -23,4 +23,12 @@ res = await fetch(`${base}/api/user/send-test-email`, {
 });
 assert.equal(res.status, 400, 'anonymous test email must not be sent to client-chosen address');
 
+// 不能用 client 指定的 email 建立使用者（沒 token 就沒有已驗證的 email）
+res = await fetch(`${base}/api/user`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ uid: 'victim', email: 'someone@example.com' }),
+});
+assert.equal(res.status, 400, 'user email must come from the verified token, not the body');
+
 console.log('auth checks passed');

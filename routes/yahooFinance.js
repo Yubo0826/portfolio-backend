@@ -1,6 +1,7 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import YahooFinance from 'yahoo-finance2';
+import { buildSymbolCandidates, normalizeSymbol } from '../utils/symbol.js';
 const yahooFinance = new YahooFinance();
 
 const router = express.Router();
@@ -241,7 +242,7 @@ router.get('/holdings-chart', async (req, res) => {
     const txBySymbol = {};
     const currencyBySymbol = {}; // 與 holdingCalc 相同：取該 symbol 第一筆交易的幣別
     for (const tx of txs) {
-      const symbol = tx.symbol;
+      const symbol = normalizeSymbol(tx.symbol);
       const type = String(tx.transaction_type || '').toLowerCase();
       currencyBySymbol[symbol] ??= String(tx.currency || 'USD').toUpperCase();
       if (!txBySymbol[symbol]) txBySymbol[symbol] = [];
@@ -274,26 +275,47 @@ router.get('/holdings-chart', async (req, res) => {
     };
 
     // 下載價格（並建立每檔的 date->close map，同時蒐集所有日期）
+    // 台股裸代號（0050、00830…）在 Yahoo 查不到，需依序嘗試 .TW / .TWO
     await Promise.all(symbols.map(async (symbol) => {
-      try {
-        const chart = await yahooFinance.chart(symbol, yfOpts);
-        const quotes = chart?.quotes || [];
-        const map = new Map();
-        for (const q of quotes) {
-          if (q.close == null || !q.date) continue;
-          const dk = toDateKeyUTC(new Date(q.date));
-          map.set(dk, Number(q.close));
-          dateSet.add(dk);
-        }
-        priceMapBySymbol[symbol] = map;
+      const candidates = buildSymbolCandidates(symbol, currencyBySymbol[symbol]);
+      let lastError = null;
 
-        // TODO: 若要支援 split 對 shares 的影響，可處理 chart.events?.splits
-        // 依你的資料源是否另有 split 入帳，再決定是否在此調整持股。
-      } catch (e) {
-        // 單一 symbol 失敗不讓整體失敗，但列警示
-        console.warn(`[holdings-chart] Failed to fetch chart for ${symbol}:`, e?.message || e);
-        priceMapBySymbol[symbol] = new Map();
+      for (const candidate of candidates) {
+        try {
+          const chart = await yahooFinance.chart(candidate, yfOpts);
+          const quotes = chart?.quotes || [];
+          if (quotes.length === 0) {
+            lastError = new Error('No quotes returned');
+            continue;
+          }
+
+          const map = new Map();
+          for (const q of quotes) {
+            if (q.close == null || !q.date) continue;
+            const dk = toDateKeyUTC(new Date(q.date));
+            map.set(dk, Number(q.close));
+            dateSet.add(dk);
+          }
+          priceMapBySymbol[symbol] = map;
+
+          if (candidate !== symbol) {
+            console.log(`[holdings-chart] Resolved ${symbol} -> ${candidate}`);
+          }
+
+          // TODO: 若要支援 split 對 shares 的影響，可處理 chart.events?.splits
+          // 依你的資料源是否另有 split 入帳，再決定是否在此調整持股。
+          return;
+        } catch (e) {
+          lastError = e;
+        }
       }
+
+      // 單一 symbol 失敗不讓整體失敗，但列警示
+      console.warn(
+        `[holdings-chart] Failed to fetch chart for ${symbol} (tried: ${candidates.join(', ')}):`,
+        lastError?.message || lastError
+      );
+      priceMapBySymbol[symbol] = new Map();
     }));
 
     // 沒有任何價格資料
@@ -388,8 +410,10 @@ router.get('/holdings-chart', async (req, res) => {
       result.push({ date: dk, value: rounded, close: rounded });
     }
 
-    // 只回傳有意義的資料點（避免全 0）
-    const trimmed = result.filter(p => p.value !== 0 || result.length <= 2);
+    // 去掉第一筆買入前的 0 值前綴，中間的 0（例如全數賣出後空手）保留下來；
+    // 整段都是 0 代表沒有任何可用價格，回空陣列讓前端顯示空狀態。
+    const firstNonZero = result.findIndex(p => p.value !== 0);
+    const trimmed = firstNonZero === -1 ? [] : result.slice(firstNonZero);
 
     return res.json(trimmed);
   } catch (error) {
