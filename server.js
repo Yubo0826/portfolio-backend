@@ -32,9 +32,11 @@ app.use(express.json()); //自動解析 Content-Type: application/json 的請求
 
 // 驗證 Firebase ID token，並用驗證後的 uid 覆蓋 client 傳來的 uid
 // ponytail: route 仍然讀 req.query.uid / req.body.uid，這裡統一覆寫，不用逐一改每個 route
-// 沒帶 token 視為未登入的 demo 帳號（前端 stores/auth.ts 的 demo-user），demo 資料任何人都能改
+// 沒帶 token 視為未登入的 demo 帳號（前端 stores/auth.ts 的 demo-user）
+// demo 資料所有訪客共用，只能看不能改；刷新價格／同步配息只是重算衍生資料，放行
 initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'asset-profolio-tracker' });
 const DEMO_UID = 'demo-user';
+const DEMO_WRITABLE = new Set(['/api/holdings/refresh-prices', '/api/dividends/sync']);
 
 const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
@@ -45,6 +47,9 @@ const authenticate = async (req, res, next) => {
     } catch {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
+  }
+  if (uid === DEMO_UID && req.method !== 'GET' && !DEMO_WRITABLE.has(req.originalUrl.split('?')[0])) {
+    return res.status(403).json({ message: 'Please sign in to make changes' });
   }
   // Express 5 的 req.query 是每次重新解析的 getter，要蓋成固定值才改得動
   Object.defineProperty(req, 'query', { value: { ...req.query, uid }, writable: true });

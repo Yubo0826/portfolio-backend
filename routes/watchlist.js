@@ -5,14 +5,6 @@ import prisma from '../utils/prisma.js';
 const yahooFinance = new YahooFinance();
 const router = express.Router();
 
-// demo 帳號所有訪客共用，只能看不能改
-router.use((req, res, next) => {
-  if (req.method !== 'GET' && req.query.uid === 'demo-user') {
-    return res.status(403).json({ message: 'Please sign in to edit the watchlist' });
-  }
-  next();
-});
-
 const normalizeSymbol = (symbol) => String(symbol ?? '').trim().toUpperCase();
 
 // 取得關注清單，並一次批次抓報價

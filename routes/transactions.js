@@ -185,8 +185,8 @@ router.post('/bulk', async (req, res) => {
         portfolio_id: normalizedPortfolioId
        },
     });
-    // 交易變動後背景重算配息（不等 Yahoo 回應）
-    syncDividendsForUserHoldings(uid, normalizedPortfolioId).catch(err => console.error('配息同步失敗:', err));
+    // 匯入是一次性大量變動且前端有 loading，等配息算完再回應，前端匯入後才抓得到利息記錄
+    await syncDividendsForUserHoldings(uid, normalizedPortfolioId).catch(err => console.error('配息同步失敗:', err));
     res.status(201).json({
       message: 'success',
       transactions: allTransactions,
