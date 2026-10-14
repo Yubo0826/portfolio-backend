@@ -8,7 +8,7 @@ router.post('/', async (req, res) => {
   console.log('Received /api/user data:', req.body);
 
   try {
-    const { uid, displayName } = req.body;
+    const { uid, displayName, portfolioName } = req.body;
     // 只用 token 驗證過的 email；不 fallback 到 body，否則沒 token 時可用任意信箱建帳號、讓提醒信寄給別人
     const email = req.user.email;
 
@@ -28,7 +28,9 @@ router.post('/', async (req, res) => {
       data: {
         uid,
         email,
-        display_name: displayName
+        display_name: displayName,
+        // 新使用者直接帶一個投資組合，登入後就能新增交易，不必先去建立
+        portfolios: { create: { name: String(portfolioName || 'My Portfolio').slice(0, 100) } },
       },
     });
 
