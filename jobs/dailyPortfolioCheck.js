@@ -9,7 +9,7 @@ import prisma from '../utils/prisma.js';
 
 /*
   每日排程任務：
-  每天 0:00：
+  每天台灣時間 15:30（台股收盤後）：
 
   抓出所有 user + portfolio
 
@@ -45,7 +45,7 @@ const task = cron.schedule('30 15 * * *', async () => {
   } catch (error) {
     console.error('❌ 每日任務執行失敗:', error);
   }
-});
+}, { timezone: 'Asia/Taipei' }); // 雲端主機（如 Railway）預設 UTC，要固定台灣時間
 
 
 // 更新特定使用者的所有 holdings

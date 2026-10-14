@@ -86,6 +86,12 @@ router.post('/', async (req, res) => {
                     },
                 })
             ),
+
+            // 改目標配置後重新啟用偏差通知
+            prisma.portfolios.update({
+                where: { id: portfolio_id },
+                data: { drift_alerted_at: null },
+            }),
         ]);
 
         if (assets.length === 0) {

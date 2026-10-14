@@ -24,9 +24,13 @@ export async function sendEmail(to, subject, html) {
       html: html,
     })
 
-    console.log("Email 已發送:", result?.id || result)
     // Resend 失敗時不 throw，而是回傳 { error }
-    return !result?.error
+    if (result?.error) {
+      console.error("Email 發送失敗:", result.error)
+      return false
+    }
+    console.log("Email 已發送:", result?.data?.id)
+    return true
   } catch (err) {
     console.error("Email 發送失敗:", err)
     return false

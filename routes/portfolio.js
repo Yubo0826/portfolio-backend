@@ -125,7 +125,8 @@ router.put('/', async (req, res) => {
         name,
         description,
         drift_threshold: drift_threshold ? Number(drift_threshold) / 100 : null,
-        enable_email_alert
+        enable_email_alert,
+        drift_alerted_at: null, // 改設定後重新啟用偏差通知
       },
     });
 
