@@ -4,6 +4,7 @@ import YahooFinance from 'yahoo-finance2';
 const yahooFinance = new YahooFinance();
 
 import prisma from '../utils/prisma.js';
+import { fromQuoteCurrency } from '../utils/currency.js';
 
 
 router.get('/', async (req, res) => {
@@ -113,7 +114,10 @@ router.delete('/', async (req, res) => {
 export const getLatestPrice = async (symbol) => {
   try {
     const data = await yahooFinance.quote(symbol);
-    return data.regularMarketPrice || data.regularMarketPreviousClose || data.regularMarketOpen || null;
+    const price = data.regularMarketPrice || data.regularMarketPreviousClose || data.regularMarketOpen || null;
+    if (price === null) return null;
+    // 倫敦等交易所回的是輔幣（GBp = 便士），換回主幣再存，否則價格會是實際的 100 倍
+    return fromQuoteCurrency(price, data.currency).amount;
   } catch (error) {
     console.error('❌ 無法取得最新價格:', symbol, error);
     return null;

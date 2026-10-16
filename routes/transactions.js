@@ -4,6 +4,7 @@ const router = express.Router();
 import prisma from '../utils/prisma.js';
 
 import { recalcHolding, validateTransaction } from '../services/holdingCalc.js';
+import { buildFxRateLookup, fetchFxRate } from '../services/fxHistory.js';
 import { syncDividendsForUserHoldings } from './dividends.js';
 
 router.get('/', async (req, res) => {
@@ -63,6 +64,9 @@ router.post('/', async (req, res) => {
       return res.status(404).json({ message: 'Portfolio not found' });
     }
 
+    // 記下成交當天的匯率，之後成本就不會隨今日匯率浮動（抓不到存 null，呼叫端退回用當下匯率）
+    const fxRate = await fetchFxRate(currency || 'USD', transaction_date);
+
     // 新增交易紀錄
     const transactionData = {
       users: { connect: { uid } }, // 連接到使用者
@@ -76,6 +80,7 @@ router.post('/', async (req, res) => {
       fee,
       transaction_type,
       transaction_date: transaction_date ? new Date(transaction_date) : undefined,
+      fx_rate: fxRate,
     };
 
     // 持股、交易紀錄在同一個 DB transaction 內，任一步失敗全部回滾
@@ -133,6 +138,12 @@ router.post('/bulk', async (req, res) => {
       return res.status(404).json({ message: 'Portfolio not found' });
     }
 
+    // 每個幣別只打一次 Yahoo 抓涵蓋整批日期的匯率區間，不是逐筆查
+    // （放在 $transaction 外面，不要讓外部請求佔著資料庫交易）
+    const fxLookup = await buildFxRateLookup(
+      transactions.map((tx) => ({ currency: tx.currency || 'USD', date: tx.transaction_date }))
+    );
+
     // 整批匯入為單一 DB transaction，任一筆失敗全部回滾
     // ponytail: 逐筆循序 create，timeout 設 60s；若匯入量大到超時，改用 createMany
     await prisma.$transaction(async (db) => {
@@ -166,6 +177,7 @@ router.post('/bulk', async (req, res) => {
             fee,
             transaction_type,
             transaction_date: transaction_date ? new Date(transaction_date) : undefined,
+            fx_rate: fxLookup(currency || 'USD', transaction_date),
           },
         });
       }
@@ -230,16 +242,26 @@ router.put('/:id', async (req, res) => {
     if (!oldTransaction) {
       return res.status(404).json({ message: 'Transaction not found' });
     }
+
+    // 幣別或日期改了就要重抓匯率；都沒改就沿用舊值，避免每次編輯都打一次 Yahoo
+    const nextCurrency = currency || 'USD';
+    const nextDate = transaction_date ? new Date(transaction_date) : oldTransaction.transaction_date;
+    const sameFxBasis = nextCurrency === oldTransaction.currency
+      && String(nextDate) === String(oldTransaction.transaction_date)
+      && oldTransaction.fx_rate != null;
+    const fxRate = sameFxBasis ? oldTransaction.fx_rate : await fetchFxRate(nextCurrency, nextDate);
+
     await prisma.$transaction(async (db) => {
       await db.transactions.update({
         where: { id: Number(id) },
         data: {
           shares,
           price,
-          currency: currency || 'USD',
+          currency: nextCurrency,
           fee: fee || 0,
           transaction_type,
           transaction_date: transaction_date ? new Date(transaction_date) : undefined,
+          fx_rate: fxRate,
         },
       });
 

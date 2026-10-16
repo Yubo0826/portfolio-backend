@@ -7,7 +7,7 @@ const yahooFinance = new YahooFinance();
 const router = express.Router();
 
 import prisma from '../utils/prisma.js';
-import { USD_TWD_SYMBOL, convert, ratesForDates } from '../services/fx.js';
+import { SUPPORTED_CURRENCIES, convert, fxSymbolOf, ratesForDates, ratesOnDate } from '../services/fx.js';
 
 const RECOMMENDATION_CARD_DEFAULT_LIMIT = 5;
 const RECOMMENDATION_CARD_MAX_LIMIT = 10;
@@ -197,8 +197,8 @@ router.get('/holdings-chart', async (req, res) => {
     if (!['1d', '1wk', '1mo'].includes(interval)) {
       return res.status(400).json({ message: 'interval must be one of 1d | 1wk | 1mo' });
     }
-    if (!['USD', 'TWD'].includes(currency)) {
-      return res.status(400).json({ message: 'currency must be USD | TWD' });
+    if (!SUPPORTED_CURRENCIES.includes(currency)) {
+      return res.status(400).json({ message: `currency must be one of ${SUPPORTED_CURRENCIES.join(' | ')}` });
     }
 
     // 1) 抓此 portfolio 的所有交易（依日期排序）
@@ -326,25 +326,38 @@ router.get('/holdings-chart', async (req, res) => {
     // 5) 生成排序後的日期清單（使用價格的交易日，不含週末/休市）
     const dates = Array.from(dateSet).sort(); // 'YYYY-MM-DD' 字串排序即時間排序
 
-    // 5-1) 有標的幣別和輸出幣別不同時，才抓 USD/TWD 歷史匯率
-    const fxRaw = new Map();
-    if (symbols.some((s) => currencyBySymbol[s] !== currency)) {
-      try {
-        // 匯率往前多抓 10 天，期間第一天剛好是匯市假日時也有前一天可沿用
-        const fxStart = new Date(startDate.getTime() - 10 * 86400000);
-        const fx = await yahooFinance.chart(USD_TWD_SYMBOL, { ...yfOpts, period1: fxStart });
-        for (const q of fx?.quotes || []) {
-          if (q.close != null && q.date) fxRaw.set(toDateKeyUTC(new Date(q.date)), Number(q.close));
+    // 5-1) 持股幣別與輸出幣別不同時，逐一抓該幣別的歷史匯率（以 USD 為中介，每個幣別一條 XXX=X）
+    const neededCurrencies = [...new Set([...symbols.map((s) => currencyBySymbol[s]), currency])]
+      .filter((code) => code && code !== 'USD');
+    const needsConversion = symbols.some((s) => currencyBySymbol[s] !== currency);
+
+    // Map<code, Map<dateKey, rate>>
+    const fxByCurrency = new Map();
+    if (needsConversion) {
+      // 匯率往前多抓 10 天，期間第一天剛好是匯市假日時也有前一天可沿用
+      const fxStart = new Date(startDate.getTime() - 10 * 86400000);
+
+      await Promise.all(neededCurrencies.map(async (code) => {
+        const raw = new Map();
+        try {
+          const fx = await yahooFinance.chart(fxSymbolOf(code), { ...yfOpts, period1: fxStart });
+          for (const q of fx?.quotes || []) {
+            if (q.close != null && q.date) raw.set(toDateKeyUTC(new Date(q.date)), Number(q.close));
+          }
+        } catch (e) {
+          console.warn(`[holdings-chart] Failed to fetch FX history for ${code}:`, e?.message || e);
         }
-      } catch (e) {
-        console.warn('[holdings-chart] Failed to fetch FX history:', e?.message || e);
-      }
-      if (fxRaw.size === 0) {
-        // 沒有匯率就無法正確加總不同幣別，回錯誤比回一條錯的線好
-        return res.status(502).json({ message: 'No FX data for currency conversion' });
+        if (raw.size > 0) {
+          fxByCurrency.set(code, ratesForDates([...new Set([...raw.keys(), ...dates])].sort(), raw));
+        }
+      }));
+
+      // 少了任何一種幣別就無法正確加總，回錯誤比回一條錯的線好
+      const missing = neededCurrencies.filter((code) => !fxByCurrency.has(code));
+      if (missing.length > 0) {
+        return res.status(502).json({ message: `No FX data for currency conversion: ${missing.join(', ')}` });
       }
     }
-    const fxByDate = ratesForDates([...new Set([...fxRaw.keys(), ...dates])].sort(), fxRaw);
 
     // 6) 以「移動指標」方式累積每檔的持股，逐日計算 Portfolio 總市值
     const runningShares = {};  // { AAPL: 0, ... }
@@ -389,6 +402,7 @@ router.get('/holdings-chart', async (req, res) => {
 
       // 6-2) 計算當日 Portfolio 總市值 = Σ (shares × close)
       let dayValue = 0;
+      const dayRates = ratesOnDate(fxByCurrency, dk);
 
       for (const s of symbols) {
         const priceMap = priceMapBySymbol[s];
@@ -402,7 +416,7 @@ router.get('/holdings-chart', async (req, res) => {
 
         const shares = runningShares[s];
         if (!shares) continue;
-        dayValue += convert(shares * px, currencyBySymbol[s], currency, fxByDate.get(dk));
+        dayValue += convert(shares * px, currencyBySymbol[s], currency, dayRates);
       }
 
       // 輸出（保留兩位小數）

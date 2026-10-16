@@ -24,6 +24,10 @@ model transactions {
   name             String?        @db.VarChar(255)
   asset_type       String?        @db.VarChar(255)
   fee              Decimal?       @db.Decimal(10, 2)
+  /// 成交當天的匯率：1 USD = fx_rate <currency>（USD 交易為 1）。
+  /// 成本用成交當時的匯率換算，市值用今天的，兩者相減才分得出股價損益與匯兌損益。
+  /// 抓不到歷史匯率時為 null，呼叫端退回用當下匯率換算（與加這個欄位之前的行為相同）。
+  fx_rate          Decimal?       @db.Decimal(18, 8)
   users            users?         @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction, map: "transactions_user_id_fkey")
   portfolios       portfolios     @relation(fields: [portfolio_id], references: [id], onDelete: Cascade)
   cash_accounts    cash_accounts? @relation(fields: [cash_account_id], references: [id], onDelete: SetNull)
@@ -87,6 +91,9 @@ model holdings {
   currency          String    @default("USD") @db.VarChar(10)
   target_percentage Decimal?  @db.Decimal(5, 2)
   current_price     Decimal?  @db.Decimal(10, 3)
+  /// 以各筆買入「當時匯率」換算的美金總成本（avg_cost 仍是原幣均價）。
+  /// 只要本輪持股中有任何一筆買入沒有 fx_rate 就為 null，表示無法正確計算。
+  total_cost_usd    Decimal?  @db.Decimal(18, 4)
   created_at        DateTime? @default(now()) @db.Timestamp(6)
   last_updated      DateTime? @default(now()) @db.Timestamp(6)
   name              String?   @db.VarChar(255)

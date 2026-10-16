@@ -2,15 +2,17 @@ import prisma from '../utils/prisma.js';
 
 import { sendEmail } from '../utils/emailService.js';
 import { getLatestPrice } from '../routes/holdings.js';
-import { USD_TWD_SYMBOL, convert } from './fx.js';
+import { convert, fxSymbolOf } from './fx.js';
+import { normalizeCurrency } from '../utils/currency.js';
 
 /**
- * 計算實際配置比例：市值先換成 USD 再算佔比，台美股混合的投組才不會失真
+ * 計算實際配置比例：市值先換成 USD 再算佔比，多幣別混合的投組才不會失真
+ * @param rates 1 USD = rates[code]（相容舊呼叫端：傳 number 時視為 USD/TWD 匯率）
  */
-export function computeAllocations(holdings, usdTwd) {
+export function computeAllocations(holdings, rates) {
   const values = holdings
     .filter((h) => h.current_price && h.total_shares)
-    .map((h) => [h.symbol, convert(Number(h.current_price) * Number(h.total_shares), h.currency, 'USD', usdTwd)]);
+    .map((h) => [h.symbol, convert(Number(h.current_price) * Number(h.total_shares), h.currency, 'USD', rates)]);
   const total = values.reduce((sum, [, v]) => sum + v, 0);
   return total ? Object.fromEntries(values.map(([s, v]) => [s, v / total])) : {};
 }
@@ -18,13 +20,13 @@ export function computeAllocations(holdings, usdTwd) {
 /**
  * 檢查某個 portfolio 是否有偏差
  */
-export async function checkPortfolioDrift(portfolioId, uid, driftThreshold, usdTwd) {
+export async function checkPortfolioDrift(portfolioId, uid, driftThreshold, rates) {
   const allocations = await prisma.allocation.findMany({
     where: { portfolio_id: portfolioId, uid },
   });
 
   const holdings = await prisma.holdings.findMany({ where: { portfolio_id: portfolioId } });
-  const actuals = computeAllocations(holdings, usdTwd);
+  const actuals = computeAllocations(holdings, rates);
   const drifts = [];
 
   for (const alloc of allocations) {
@@ -51,9 +53,17 @@ export async function checkPortfolioDrift(portfolioId, uid, driftThreshold, usdT
 export async function checkAllPortfolios() {
   console.log('開始每日投資組合偏差檢查...')
 
-  // ponytail: 抓不到匯率就整批跳過（含純單一幣別的投組），避免台美股混合投組誤報；明天排程再檢查
-  const usdTwd = await getLatestPrice(USD_TWD_SYMBOL)
-  if (!usdTwd) return console.error('❌ 取不到 USD/TWD 匯率，略過今日偏差檢查')
+  // 只抓資料庫裡實際用到的幣別；少了任何一種就整批跳過（含純單一幣別的投組），
+  // 避免多幣別混合投組誤報，明天排程再檢查
+  const held = await prisma.holdings.findMany({ select: { currency: true }, distinct: ['currency'] })
+  const codes = [...new Set(held.map((h) => normalizeCurrency(h.currency)))].filter((code) => code !== 'USD')
+
+  const rates = {}
+  for (const code of codes) {
+    const rate = await getLatestPrice(fxSymbolOf(code))
+    if (!rate) return console.error(`❌ 取不到 USD/${code} 匯率，略過今日偏差檢查`)
+    rates[code] = rate
+  }
 
   const portfolios = await prisma.portfolios.findMany({
     include: { users: true },
@@ -61,7 +71,7 @@ export async function checkAllPortfolios() {
 
   for (const p of portfolios) {
     const driftThreshold = Number(p.drift_threshold) || 0.05
-    const drifts = await checkPortfolioDrift(p.id, p.uid, driftThreshold, usdTwd)
+    const drifts = await checkPortfolioDrift(p.id, p.uid, driftThreshold, rates)
 
     console.log(`⚠️ ${p.users.display_name}  投資組合 ${p.name} 偏差 ${drifts.length} 項 , email alert: ${p.enable_email_alert}`);
 
