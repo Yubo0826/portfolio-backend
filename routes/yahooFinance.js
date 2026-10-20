@@ -27,6 +27,21 @@ export const lastSessionCloses = (quotes = []) => {
     .map(q => Number(q.close.toFixed(4)));
 };
 
+// 迷你走勢圖用：最後一個交易時段的 5 分 K 收盤價；抓不到就回空陣列，不讓整張卡片失敗
+// ponytail: 每檔各打一次 chart；卡片上限 10 檔，量大再改用 Yahoo spark 批次端點
+const fetchSessionCloses = async (symbol) => {
+  try {
+    const chart = await yahooFinance.chart(symbol, {
+      period1: new Date(Date.now() - 4 * 86400000),
+      interval: '5m',
+      includePrePost: false,
+    }, { validateResult: false });
+    return lastSessionCloses(chart?.quotes);
+  } catch {
+    return [];
+  }
+};
+
 const parseRecommendationLimit = (value) => {
   const parsed = Number.parseInt(String(value ?? RECOMMENDATION_CARD_DEFAULT_LIMIT), 10);
   if (!Number.isFinite(parsed)) return RECOMMENDATION_CARD_DEFAULT_LIMIT;
@@ -143,6 +158,7 @@ const buildRecommendationCard = async ({ symbol, score }) => {
     longName: quoteData?.longName || '',
     shortName: quoteData?.shortName || '',
     name: quoteData?.longName || quoteData?.shortName || symbol,
+    quoteType: quoteData?.quoteType || '',
     regularMarketPrice,
     regularMarketChange,
     regularMarketChangePercent,
@@ -517,9 +533,9 @@ router.get('/fund-holdings', async (req, res) => {
   }
 });
 
-// 熱門股票（Yahoo Trending tickers）；spark=1 時附當日走勢收盤價陣列給迷你走勢圖
+// 熱門股票（Yahoo Trending tickers）
 router.get('/trending', async (req, res) => {
-    const { region = 'US', lang = 'en-US', spark } = req.query;
+    const { region = 'US', lang = 'en-US' } = req.query;
     console.log('Received /api/yahooFinance/trending request:', req.query);
   try {
     // schema 偶爾漂移，以無驗證模式抓原始結果避免整包失敗。
@@ -536,15 +552,6 @@ router.get('/trending', async (req, res) => {
         yahooFinance.quoteCombine(item.symbol, undefined, { validateResult: false })
       )
     );
-
-    // ponytail: 每檔各打一次 chart 取 5 分 K；檔數固定 5 檔，量大再改用 Yahoo spark 批次端點
-    const sparkResults = spark
-      ? await Promise.allSettled(trendingQuotes.map(item => yahooFinance.chart(item.symbol, {
-        period1: new Date(Date.now() - 4 * 86400000),
-        interval: '5m',
-        includePrePost: false,
-      }, { validateResult: false })))
-      : [];
 
     const mergedQuotes = trendingQuotes.map((item, index) => {
       const quote = quoteResults[index]?.status === 'fulfilled'
@@ -563,7 +570,6 @@ router.get('/trending', async (req, res) => {
         regularMarketChangePercent: quote?.regularMarketChangePercent ?? item.regularMarketChangePercent ?? null,
         regularMarketPreviousClose: quote?.regularMarketPreviousClose ?? null,
         currency: quote?.currency || item.currency || '',
-        ...(spark && { spark: lastSessionCloses(sparkResults[index]?.value?.quotes) }),
       };
     });
 
@@ -621,7 +627,10 @@ router.get('/recommend/cards', async (req, res) => {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
 
-    const settled = await Promise.allSettled(selected.map((item) => buildRecommendationCard(item)));
+    const settled = await Promise.allSettled(selected.map(async (item) => ({
+      ...await buildRecommendationCard(item),
+      ...(req.query.spark && { spark: await fetchSessionCloses(item.symbol) }),
+    })));
 
     const recommendations = [];
     const warnings = [];
