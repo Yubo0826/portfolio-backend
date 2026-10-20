@@ -17,6 +17,16 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(numberValue) ? numberValue : null;
 };
 
+// 取最後一個交易時段的收盤價：交易時段不超過 20 小時，前一時段收盤距今必定更遠
+export const lastSessionCloses = (quotes = []) => {
+  const valid = (quotes || []).filter(q => Number.isFinite(q?.close) && q?.date);
+  if (!valid.length) return [];
+  const lastTime = new Date(valid[valid.length - 1].date).getTime();
+  return valid
+    .filter(q => new Date(q.date).getTime() >= lastTime - 20 * 3600000)
+    .map(q => Number(q.close.toFixed(4)));
+};
+
 const parseRecommendationLimit = (value) => {
   const parsed = Number.parseInt(String(value ?? RECOMMENDATION_CARD_DEFAULT_LIMIT), 10);
   if (!Number.isFinite(parsed)) return RECOMMENDATION_CARD_DEFAULT_LIMIT;
@@ -492,36 +502,51 @@ router.get('/summary', async (req, res) => {
   }
 });
 
-// 熱門股票
-router.get('/trending', async (req, res) => {
-    const { region = 'US', lang = 'en-US' } = req.query;
-    console.log('Received /api/yahooFinance/dailyGainers request:', req.query);
+// ETF/基金產業配置與前十大持股（資產頁 treemap）
+router.get('/fund-holdings', async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ message: 'Missing required query param: symbol' });
   try {
-    const screenerOptions = {
-      scrIds: 'day_gainers',
-      count: 5,
-      region,
-      lang,
-    };
+    const { topHoldings } = await yahooFinance.quoteSummary(symbol, { modules: ['topHoldings'] });
+    // Yahoo 的 sectorWeightings 是 [{ technology: 0.4 }, ...]，攤平成 [{ sector, weight }]
+    const sectorWeightings = (topHoldings?.sectorWeightings || []).flatMap(item => Object.entries(item).map(([sector, weight]) => ({ sector, weight })));
+    const holdings = (topHoldings?.holdings || []).map(h => ({ symbol: h.symbol, name: h.holdingName, weight: h.holdingPercent }));
+    res.json({ sectorWeightings, holdings });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    // Yahoo Screener schema 偶爾漂移，這裡直接以無驗證模式抓原始結果避免整包失敗。
-    const screenerResult = await yahooFinance.screener(screenerOptions, undefined, {
+// 熱門股票（Yahoo Trending tickers）；spark=1 時附當日走勢收盤價陣列給迷你走勢圖
+router.get('/trending', async (req, res) => {
+    const { region = 'US', lang = 'en-US', spark } = req.query;
+    console.log('Received /api/yahooFinance/trending request:', req.query);
+  try {
+    // schema 偶爾漂移，以無驗證模式抓原始結果避免整包失敗。
+    const trendingResult = await yahooFinance.trendingSymbols(region, { count: 5, lang }, {
       validateResult: false,
     });
 
-    const topGainers = (Array.isArray(screenerResult?.quotes)
-      ? screenerResult.quotes
-      : screenerResult?.finance?.result?.[0]?.quotes || [])
+    const trendingQuotes = (Array.isArray(trendingResult?.quotes) ? trendingResult.quotes : [])
       .filter(item => item?.symbol)
       .slice(0, 5);
 
     const quoteResults = await Promise.allSettled(
-      topGainers.map(item =>
+      trendingQuotes.map(item =>
         yahooFinance.quoteCombine(item.symbol, undefined, { validateResult: false })
       )
     );
 
-    const mergedQuotes = topGainers.map((item, index) => {
+    // ponytail: 每檔各打一次 chart 取 5 分 K；檔數固定 5 檔，量大再改用 Yahoo spark 批次端點
+    const sparkResults = spark
+      ? await Promise.allSettled(trendingQuotes.map(item => yahooFinance.chart(item.symbol, {
+        period1: new Date(Date.now() - 4 * 86400000),
+        interval: '5m',
+        includePrePost: false,
+      }, { validateResult: false })))
+      : [];
+
+    const mergedQuotes = trendingQuotes.map((item, index) => {
       const quote = quoteResults[index]?.status === 'fulfilled'
         ? quoteResults[index].value
         : null;
@@ -534,8 +559,11 @@ router.get('/trending', async (req, res) => {
         assetType: item.typeDisp || item.assetType || quote?.quoteType || '',
         exchDisp: quote?.fullExchangeName || item.fullExchangeName || item.exchDisp || item.exchange || '',
         regularMarketPrice: quote?.regularMarketPrice ?? item.regularMarketPrice ?? null,
+        regularMarketChange: quote?.regularMarketChange ?? item.regularMarketChange ?? null,
         regularMarketChangePercent: quote?.regularMarketChangePercent ?? item.regularMarketChangePercent ?? null,
+        regularMarketPreviousClose: quote?.regularMarketPreviousClose ?? null,
         currency: quote?.currency || item.currency || '',
+        ...(spark && { spark: lastSessionCloses(sparkResults[index]?.value?.quotes) }),
       };
     });
 
