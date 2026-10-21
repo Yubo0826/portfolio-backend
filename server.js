@@ -10,7 +10,8 @@ dotenv.config();
 const app = express();
 
 const allowedOrigins = [
-  'https://stockbar.up.railway.app'
+  'https://stockbar.up.railway.app',
+  'https://stockbar.chouboyu.com'
 ];
 
 // 開發環境允許本地端存取，/env 裡設定 NODE_ENV="development"

@@ -58,7 +58,9 @@ router.post('/send-test-email', async (req, res) => {
       text: 'This is a test email sent from the portfolio backend.'
     };
     console.log('Sending test email to:', emailOptions);
-    await sendEmail(emailOptions.to, emailOptions.subject, emailOptions.text);
+    if (!await sendEmail(emailOptions.to, emailOptions.subject, emailOptions.text)) {
+      return res.status(502).json({ message: 'Failed to send test email' });
+    }
     res.status(200).json({ message: 'Test email sent successfully' });
   } catch (error) {
     console.error('Error sending test email:', error);
