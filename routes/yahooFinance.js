@@ -504,6 +504,40 @@ router.get('/allocation-chart', async (req, res) => {
     }
 });
 
+// 單檔標的的產業權重：ETF 用 topHoldings.sectorWeightings，個股用 summaryProfile.sector（權重 1）；都沒有（債券、加密貨幣）回空陣列
+// 個股的 'Financial Services' 轉成與 ETF 相同的 key 'financial_services'；'Real Estate' 在 ETF 是 'realestate'（無底線）
+export const sectorWeightsOf = ({ summaryProfile, topHoldings } = {}) => {
+  const fund = (topHoldings?.sectorWeightings || [])
+    .flatMap(item => Object.entries(item))
+    .filter(([, weight]) => weight > 0)
+    .map(([sector, weight]) => ({ sector, weight }));
+  if (fund.length) return fund;
+  const sector = summaryProfile?.sector?.toLowerCase().replace(/ /g, '_').replace('real_estate', 'realestate');
+  return sector ? [{ sector, weight: 1 }] : [];
+};
+
+// 多檔標的的產業權重（資產明細「組合分析」用），回傳 { AAPL: [{ sector, weight }], ... }；單檔失敗回空陣列不拖垮整批
+// ponytail: 產業別幾乎不變，用行程內 Map 快取一天；不清過期項目，上限是「查過的不同代號數」，重啟即清空
+const SECTOR_CACHE_MS = 86400000;
+const sectorCache = new Map();
+router.get('/sectors', async (req, res) => {
+  const symbols = [...new Set(String(req.query.symbols || '').split(',').map(s => s.trim()).filter(Boolean))];
+  if (!symbols.length || symbols.length > 100) return res.status(400).json({ message: 'symbols must list 1-100 symbols' });
+  const entries = await Promise.all(symbols.map(async (symbol) => {
+    const hit = sectorCache.get(symbol);
+    if (hit && Date.now() - hit.at < SECTOR_CACHE_MS) return [symbol, hit.weights];
+    try {
+      const weights = sectorWeightsOf(await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'topHoldings'] }));
+      sectorCache.set(symbol, { at: Date.now(), weights });
+      return [symbol, weights];
+    } catch (error) {
+      console.warn(`sectors: ${symbol} failed`, error.message);
+      return [symbol, []];
+    }
+  }));
+  res.json(Object.fromEntries(entries));
+});
+
 // 公司財報摘要
 router.get('/summary', async (req, res) => {
   const { symbol } = req.query;

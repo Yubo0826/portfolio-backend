@@ -1,6 +1,6 @@
 // node routes/yahooFinance.test.js
 import assert from 'node:assert/strict';
-import { lastSessionCloses } from './yahooFinance.js';
+import { lastSessionCloses, sectorWeightsOf } from './yahooFinance.js';
 
 const q = (iso, close) => ({ date: new Date(iso), close });
 
@@ -13,6 +13,14 @@ assert.deepEqual(lastSessionCloses([
 ]), [11, 12.3457]);
 assert.deepEqual(lastSessionCloses([]), []);
 assert.deepEqual(lastSessionCloses(undefined), []);
+
+// 產業權重：ETF 用 sectorWeightings（濾掉 0），個股 sector 轉成 ETF 的 key
+assert.deepEqual(sectorWeightsOf({ topHoldings: { sectorWeightings: [{ technology: 0.6 }, { energy: 0 }, { realestate: 0.1 }] } }),
+  [{ sector: 'technology', weight: 0.6 }, { sector: 'realestate', weight: 0.1 }]);
+assert.deepEqual(sectorWeightsOf({ summaryProfile: { sector: 'Financial Services' } }), [{ sector: 'financial_services', weight: 1 }]);
+assert.deepEqual(sectorWeightsOf({ summaryProfile: { sector: 'Real Estate' } }), [{ sector: 'realestate', weight: 1 }]);
+assert.deepEqual(sectorWeightsOf({ topHoldings: { sectorWeightings: [] } }), []);
+assert.deepEqual(sectorWeightsOf(), []);
 
 console.log('yahooFinance ok');
 process.exit(0); // 匯入 router 會建立 prisma 連線，跑完直接結束
