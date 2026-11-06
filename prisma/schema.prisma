@@ -45,6 +45,7 @@ model users {
   cash_accounts cash_accounts[]
   cash_flows    cash_flows[]
   watchlist     watchlist[]
+  fx_exchanges  fx_exchanges[]
 }
 
 model cash_accounts {
@@ -171,3 +172,20 @@ model watchlist {
   @@unique([uid, symbol])
 }
 
+// 換匯紀錄（使用者層級）。ponytail: 本國幣固定為 TWD，一筆就是 TWD <-> 外幣；要支援其他本國幣再加 home_currency 欄位
+model fx_exchanges {
+  id             Int      @id @default(autoincrement())
+  uid            String   @db.VarChar(255)
+  date           DateTime @db.Date
+  side           String   @db.VarChar(4) // buy: 台幣換外幣；sell: 外幣換回台幣
+  currency       String   @db.VarChar(10) // 外幣
+  foreign_amount Decimal  @db.Decimal(18, 4)
+  twd_amount     Decimal  @db.Decimal(18, 4)
+  fee            Decimal  @default(0) @db.Decimal(18, 4) // 台幣
+  market_rate    Decimal? @db.Decimal(18, 8) // 當天 Yahoo 收盤：1 外幣 = ? TWD；抓不到為 null
+  note           String?  @db.VarChar(255)
+  created_at     DateTime @default(now()) @db.Timestamp(6)
+  users          users    @relation(fields: [uid], references: [uid], onDelete: Cascade)
+
+  @@index([uid, date])
+}
