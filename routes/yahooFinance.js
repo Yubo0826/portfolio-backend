@@ -275,6 +275,8 @@ router.get('/holdings-chart', async (req, res) => {
       txBySymbol[symbol].push({
         date: new Date(tx.transaction_date),
         shares: Number(tx.shares),
+        price: Number(tx.price),
+        fee: Number(tx.fee ?? 0),
         type
       });
     }
@@ -405,10 +407,12 @@ router.get('/holdings-chart', async (req, res) => {
       }));
     }
 
-    const result = []; // [{ date, value, close }]
+    const result = []; // [{ date, value, close, flow }]
 
     for (const dk of dates) {
-      // 6-1) 先把「交易日 <= 當日」的交易吃進 runningShares
+      // 6-1) 先把「交易日 <= 當日」的交易吃進 runningShares，同時累計當日淨投入（買入付出、賣出收回，含手續費）
+      const dayRates = ratesOnDate(fxByCurrency, dk);
+      let dayFlow = 0;
       for (const s of symbols) {
         const list = txBySymbolDateKeyed[s];
         let idx = txIndex[s];
@@ -416,8 +420,10 @@ router.get('/holdings-chart', async (req, res) => {
           const t = list[idx];
           if (t.type === 'buy') {
             runningShares[s] += t.shares;
+            dayFlow += convert(t.shares * t.price + t.fee, currencyBySymbol[s], currency, dayRates);
           } else if (t.type === 'sell') {
             runningShares[s] -= t.shares;
+            dayFlow -= convert(t.shares * t.price - t.fee, currencyBySymbol[s], currency, dayRates);
           } else {
             // 其他型別忽略，或依你的定義處理
           }
@@ -428,7 +434,6 @@ router.get('/holdings-chart', async (req, res) => {
 
       // 6-2) 計算當日 Portfolio 總市值 = Σ (shares × close)
       let dayValue = 0;
-      const dayRates = ratesOnDate(fxByCurrency, dk);
 
       for (const s of symbols) {
         const priceMap = priceMapBySymbol[s];
@@ -447,7 +452,8 @@ router.get('/holdings-chart', async (req, res) => {
 
       // 輸出（保留兩位小數）
       const rounded = Math.round(dayValue * 100) / 100;
-      result.push({ date: dk, value: rounded, close: rounded });
+      // flow：當日淨投入（顯示幣別），前端算時間加權報酬（TWR）時用來扣掉資金進出
+      result.push({ date: dk, value: rounded, close: rounded, flow: Math.round(dayFlow * 100) / 100 });
     }
 
     // 去掉第一筆買入前的 0 值前綴，中間的 0（例如全數賣出後空手）保留下來；
