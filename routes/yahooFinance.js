@@ -227,11 +227,19 @@ router.get('/holdings-chart', async (req, res) => {
       return res.status(400).json({ message: `currency must be one of ${SUPPORTED_CURRENCIES.join(' | ')}` });
     }
 
-    // 1) 抓此 portfolio 的所有交易（依日期排序）
-    const txs = await prisma.transactions.findMany({
+    // 可選：只算部分標的（逗號分隔），給儀表板的持股篩選用；不給就是整個 portfolio
+    const onlySymbols = req.query.symbols
+      ? new Set(String(req.query.symbols).split(',').map((s) => normalizeSymbol(s.trim())).filter(Boolean))
+      : null;
+    if (onlySymbols && onlySymbols.size > 100) {
+      return res.status(400).json({ message: 'symbols accepts at most 100 entries' });
+    }
+
+    // 1) 抓此 portfolio 的所有交易（依日期排序），有指定 symbols 時只留那些
+    const txs = (await prisma.transactions.findMany({
       where: { uid, portfolio_id: Number(portfolio_id) },
       orderBy: { transaction_date: 'asc' }
-    });
+    })).filter((tx) => !onlySymbols || onlySymbols.has(normalizeSymbol(tx.symbol)));
 
     if (!txs || txs.length === 0) {
       return res.status(404).json({ message: 'No transactions found' });
