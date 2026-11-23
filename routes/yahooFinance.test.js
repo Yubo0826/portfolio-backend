@@ -1,6 +1,6 @@
 // node routes/yahooFinance.test.js
 import assert from 'node:assert/strict';
-import { lastSessionCloses, sectorWeightsOf } from './yahooFinance.js';
+import { lastSessionCloses, sectorWeightsOf, companyWeightsOf } from './yahooFinance.js';
 
 const q = (iso, close) => ({ date: new Date(iso), close });
 
@@ -21,6 +21,12 @@ assert.deepEqual(sectorWeightsOf({ summaryProfile: { sector: 'Financial Services
 assert.deepEqual(sectorWeightsOf({ summaryProfile: { sector: 'Real Estate' } }), [{ sector: 'realestate', weight: 1 }]);
 assert.deepEqual(sectorWeightsOf({ topHoldings: { sectorWeightings: [] } }), []);
 assert.deepEqual(sectorWeightsOf(), []);
+
+// 公司持有：ETF 用前十大（濾掉沒代號的），個股是自己，都沒有回空
+assert.deepEqual(companyWeightsOf('QQQ', { topHoldings: { holdings: [{ symbol: 'AAPL', holdingName: 'Apple', holdingPercent: 0.08 }, { symbol: '', holdingName: 'Bond', holdingPercent: 0.1 }] } }),
+  [{ symbol: 'AAPL', name: 'Apple', weight: 0.08 }]);
+assert.deepEqual(companyWeightsOf('2330.TW', { summaryProfile: { sector: 'Technology' } }), [{ symbol: '2330.TW', name: '', weight: 1 }]);
+assert.deepEqual(companyWeightsOf('BTC-USD', {}), []);
 
 console.log('yahooFinance ok');
 process.exit(0); // 匯入 router 會建立 prisma 連線，跑完直接結束

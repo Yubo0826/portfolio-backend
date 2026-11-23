@@ -530,7 +530,17 @@ export const sectorWeightsOf = ({ summaryProfile, topHoldings } = {}) => {
   return sector ? [{ sector, weight: 1 }] : [];
 };
 
-// 多檔標的的產業權重（資產明細「組合分析」用），回傳 { AAPL: [{ sector, weight }], ... }；單檔失敗回空陣列不拖垮整批
+// 單檔標的的公司持有（組合分析「公司持有排行」）：ETF 用 topHoldings.holdings（Yahoo 只給前十大），個股就是自己（權重 1），都沒有回空陣列
+// ponytail: 沒代號的成分（部分債券）直接略過；同公司不同代號（2330.TW／TSM）不合併，要合併得另維護對照表
+export const companyWeightsOf = (symbol, { summaryProfile, topHoldings } = {}) => {
+  const fund = (topHoldings?.holdings || [])
+    .filter(h => h.symbol && h.holdingPercent > 0)
+    .map(h => ({ symbol: h.symbol, name: h.holdingName || '', weight: h.holdingPercent }));
+  if (fund.length) return fund;
+  return summaryProfile?.sector ? [{ symbol, name: '', weight: 1 }] : [];
+};
+
+// 多檔標的的產業權重與公司持有（資產明細「組合分析」用），回傳 { AAPL: { sectors: [{ sector, weight }], companies: [{ symbol, name, weight }] }, ... }；單檔失敗回空陣列不拖垮整批
 // ponytail: 產業別幾乎不變，用行程內 Map 快取一天；不清過期項目，上限是「查過的不同代號數」，重啟即清空
 const SECTOR_CACHE_MS = 86400000;
 const sectorCache = new Map();
@@ -539,14 +549,15 @@ router.get('/sectors', async (req, res) => {
   if (!symbols.length || symbols.length > 100) return res.status(400).json({ message: 'symbols must list 1-100 symbols' });
   const entries = await Promise.all(symbols.map(async (symbol) => {
     const hit = sectorCache.get(symbol);
-    if (hit && Date.now() - hit.at < SECTOR_CACHE_MS) return [symbol, hit.weights];
+    if (hit && Date.now() - hit.at < SECTOR_CACHE_MS) return [symbol, hit.data];
     try {
-      const weights = sectorWeightsOf(await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'topHoldings'] }));
-      sectorCache.set(symbol, { at: Date.now(), weights });
-      return [symbol, weights];
+      const summary = await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'topHoldings'] });
+      const data = { sectors: sectorWeightsOf(summary), companies: companyWeightsOf(symbol, summary) };
+      sectorCache.set(symbol, { at: Date.now(), data });
+      return [symbol, data];
     } catch (error) {
       console.warn(`sectors: ${symbol} failed`, error.message);
-      return [symbol, []];
+      return [symbol, { sectors: [], companies: [] }];
     }
   }));
   res.json(Object.fromEntries(entries));
