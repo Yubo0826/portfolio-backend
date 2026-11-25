@@ -191,6 +191,11 @@ router.get('/quote', async (req, res) => {
     console.log('Received /api/yahooFinance/quote request:', req.query);
   try {
     const result = await yahooFinance.quote(symbol);
+    // spark=1：每檔附上最後一個交易時段的 5 分 K 收盤價（儀表板大盤指數迷你走勢圖）
+    if (req.query.spark) {
+      const list = [].concat(result ?? []);
+      await Promise.all(list.map(async (q) => { q.spark = await fetchSessionCloses(q.symbol); }));
+    }
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
