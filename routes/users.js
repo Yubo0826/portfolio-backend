@@ -41,6 +41,26 @@ router.post('/', async (req, res) => {
   }
 });
 
+// 刪除帳號確認：使用者輸入的 email 要等於 token 裡驗證過的 email（不分大小寫、忽略前後空白）
+export const emailConfirmed = (input, tokenEmail) =>
+  Boolean(tokenEmail) && String(input ?? '').trim().toLowerCase() === tokenEmail.toLowerCase();
+
+// 刪除帳號：立即刪除，不保留寬限期。只刪 users 一筆，其餘資料表都設了 onDelete: Cascade
+// （投資組合、交易、持股、現金帳戶、關注清單、換匯直接掛 users；配置、配息掛在投資組合底下）
+// demo 帳號在 authenticate 就被擋（非 GET 一律 403）；Firebase 登入紀錄由前端刪
+router.delete('/', async (req, res) => {
+  if (!emailConfirmed(req.body?.email, req.user.email)) {
+    return res.status(400).json({ message: 'Email does not match' });
+  }
+  try {
+    await prisma.users.deleteMany({ where: { uid: req.user.uid } });
+    res.json({ message: 'Account deleted' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // 寄信測試
 router.post('/send-test-email', async (req, res) => {
   const { sendEmail } = await import('../utils/emailService.js');
